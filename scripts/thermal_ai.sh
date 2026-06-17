@@ -14,6 +14,7 @@ MODDIR="${0%/*}/.."
 . "$MODDIR/scripts/logger.sh"
 . "$MODDIR/scripts/game_detector.sh"
 . "$MODDIR/scripts/governor_tuner.sh"
+. "$MODDIR/scripts/charge_control.sh"
 . "$MODDIR/scripts/thermal_policy.sh"
 
 CFG="$MODDIR/config/profiles.conf"
@@ -29,11 +30,11 @@ GAMING_SCORE_BOOST="${GAMING_SCORE_BOOST:-35}"
 GPU_GAMING_THRESHOLD="${GPU_GAMING_THRESHOLD:-20}"
 LOG_ROTATE_MIN="${LOG_ROTATE_MIN:-60}"
 
-TEMP_COOL="${TEMP_COOL:-45}"
-TEMP_WARM="${TEMP_WARM:-55}"
-TEMP_HOT="${TEMP_HOT:-65}"
-TEMP_POWERSAVE="${TEMP_POWERSAVE:-72}"
-TEMP_CRITICAL="${TEMP_CRITICAL:-78}"
+TEMP_COOL="${TEMP_COOL:-42}"
+TEMP_WARM="${TEMP_WARM:-48}"
+TEMP_HOT="${TEMP_HOT:-58}"
+TEMP_POWERSAVE="${TEMP_POWERSAVE:-68}"
+TEMP_CRITICAL="${TEMP_CRITICAL:-75}"
 
 # ─── State ────────────────────────────────────────────────────────────────────
 TEMP_HISTORY=""
@@ -127,11 +128,17 @@ calculate_trend() {
 # ─── Asymmetric EMA [FIX-1: clamp raised to ±50] ────────────────────────────
 update_trend_ema() {
     local s="$1"
-    if [ "$s" -gt "$TREND_SCORE" ]; then
+
+    # NEW: Heavily penalize sudden huge temperature spikes to act faster
+    if [ "$s" -gt 15 ] && [ "$s" -gt "$TREND_SCORE" ]; then
+        # Huge spike detected, fast-track the EMA upward
+        TREND_SCORE=$((TREND_SCORE*40/100 + s*60/100))
+    elif [ "$s" -gt "$TREND_SCORE" ]; then
         TREND_SCORE=$((TREND_SCORE*75/100 + s*25/100))
     else
         TREND_SCORE=$((TREND_SCORE*45/100 + s*55/100))
     fi
+
     [ "$TREND_SCORE" -gt  50 ] && TREND_SCORE=50   # was ±30
     [ "$TREND_SCORE" -lt -50 ] && TREND_SCORE=-50
 }
@@ -258,6 +265,17 @@ start_log_rotation() {
     log_info "Log rotation started (every ${LOG_ROTATE_MIN} min)"
 }
 
+# ─── Display State ────────────────────────────────────────────────────────────
+get_screen_state() {
+    local state
+    state=$(dumpsys power 2>/dev/null | grep 'mHoldingDisplaySuspendBlocker' | cut -d= -f2)
+    if [ "$state" = "false" ]; then
+        echo "off"
+    else
+        echo "on"
+    fi
+}
+
 # ─── Main Loop ────────────────────────────────────────────────────────────────
 main_loop() {
     log_info "════════════════════════════════════════"
@@ -288,7 +306,14 @@ main_loop() {
         local pred; pred=$(predict_temp "$temp" "$slope" "$PREDICTION_WINDOW")
         local conf; conf=$(calculate_confidence)
 
-        local new_policy; new_policy=$(ai_decide_policy "$temp" "$gpu" "$gaming" "$pred" "$conf")
+        local screen_state; screen_state=$(get_screen_state)
+        local new_policy
+
+        if [ "$screen_state" = "off" ]; then
+            new_policy="suspend"
+        else
+            new_policy=$(ai_decide_policy "$temp" "$gpu" "$gaming" "$pred" "$conf")
+        fi
 
         if [ "$new_policy" != "$CURRENT_POLICY" ]; then
             apply_thermal_policy "$new_policy" "$gaming"
@@ -296,8 +321,9 @@ main_loop() {
             LAST_POLICY_CHANGE=$(date +%s)
         fi
 
-        # Fast poll when gaming OR GPU is hot (don't wait for detection to confirm)
-        if $gaming || [ "$gpu" -ge "$GPU_GAMING_THRESHOLD" ]; then
+        if [ "$screen_state" = "off" ]; then
+            sleep "$((POLL_INTERVAL * 2))" # Poll slower when screen is off
+        elif $gaming || [ "$gpu" -ge "$GPU_GAMING_THRESHOLD" ]; then
             sleep "$GAME_POLL_INTERVAL"
         else
             sleep "$POLL_INTERVAL"
