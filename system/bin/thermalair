@@ -45,6 +45,14 @@ cmd_status() {
         echo "  Game Tweaks : ACTIVE (Net/Touch Boosted)"
     else
         echo "  Game Tweaks : INACTIVE"
+    # Blacklist
+    local blacklist_count=$(ls /data/local/tmp/thermalai.blacklist/*.blacklisted 2>/dev/null | wc -l)
+    if [ "$blacklist_count" -gt 0 ]; then
+        echo "  Blacklist   : ACTIVE ($blacklist_count nodes)"
+    else
+        echo "  Blacklist   : CLEAN"
+    fi
+
     fi
 
     # Parse last log line for comprehensive state
@@ -69,6 +77,8 @@ cmd_status() {
         local comfort_score=$(grep "comf=" "$LOG_FILE" 2>/dev/null | tail -1 | grep -o "comf=[0-9-]*" | cut -d= -f2 || echo 0)
         echo "  Comfort     : $comfort_score"
         echo "  Ctx Score   : $ctx_score"
+        echo "  Mem Pressur : $mem_score"
+        echo "  Stutter Idx : $stut_score"
 
         echo "  Gaming      : $gaming_bool (Pkg: $gaming_pkg)"
         echo "  AI Temp     : ${cur}°C (Predicted: ${pred}°C)"

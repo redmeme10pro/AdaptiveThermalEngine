@@ -43,6 +43,12 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.2.0
+- Implemented App-Switch Transition Engine with Residual State Cleaner to prevent lag when switching games.
+- Added Dynamic Post-Game Cool-Down Profile.
+- Added Memory-Pressure & Frame-Stutter Monitoring.
+- Built Auto-Blacklist sysfs wrapper to safely ignore failing paths without rebooting.
+
 ### Changelog v2.1.0
 - Implemented advanced predictive heat forecasting using EMA and thermal inertia.
 - Added Dynamic Policy Weighting for context-aware intelligence.
