@@ -13,6 +13,8 @@ rm -f "$LOG_FILE"
 rm -f "$LOG_FILE.1"
 rm -f "$LOCK_FILE"
 rm -f "/data/local/tmp/thermalai.gaming_tweaks_state"
+rm -f "/data/local/tmp/thermalai.snapshot"
+rm -rf "/data/local/tmp/thermalai.game_profiles"
 rm -f "/data/local/tmp/thermalai.calibration"
 
 # The module's shutdown logic or the OS reboot will naturally revert kernel settings

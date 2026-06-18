@@ -62,6 +62,14 @@ cmd_status() {
         local policy=$(echo "$last_ai" | awk -F'-> ' '{print $2}')
 
         echo "  Policy      : $(echo "$policy" | tr '[:lower:]' '[:upper:]')"
+        local trend_score=$(echo "$last_ai" | grep -o "tr=[0-9-]*" | cut -d= -f2)
+        local ai_score=$(echo "$last_ai" | grep -o "score=[0-9-]*" | cut -d= -f2)
+        echo "  AI Score    : $ai_score (Trend: $trend_score)"
+        local ctx_score=$(grep "ctx=" "$LOG_FILE" 2>/dev/null | tail -1 | grep -o "ctx=[0-9-]*" | cut -d= -f2 || echo 0)
+        local comfort_score=$(grep "comf=" "$LOG_FILE" 2>/dev/null | tail -1 | grep -o "comf=[0-9-]*" | cut -d= -f2 || echo 0)
+        echo "  Comfort     : $comfort_score"
+        echo "  Ctx Score   : $ctx_score"
+
         echo "  Gaming      : $gaming_bool (Pkg: $gaming_pkg)"
         echo "  AI Temp     : ${cur}°C (Predicted: ${pred}°C)"
         echo "  GPU Load    : ${gpu}%"

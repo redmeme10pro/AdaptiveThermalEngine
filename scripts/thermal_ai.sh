@@ -16,6 +16,8 @@ MODDIR="${0%/*}/.."
 . "$MODDIR/scripts/governor_tuner.sh"
 . "$MODDIR/scripts/charge_control.sh"
 . "$MODDIR/scripts/game_tweaks.sh"
+. "$MODDIR/scripts/advanced_ai.sh"
+. "$MODDIR/scripts/state_manager.sh"
 . "$MODDIR/scripts/thermal_policy.sh"
 
 CFG="$MODDIR/config/profiles.conf"
@@ -208,6 +210,26 @@ ai_decide_policy() {
     s_trend=$((TREND_SCORE / 4))
 
     s=$((s_temp + s_pred + s_game + s_trend))
+
+    # Incorporate dynamic context weighting
+    local context_weight=$(get_context_score)
+    local comfort_weight=$(get_thermal_comfort_score)
+    s=$((s + comfort_weight))
+    s=$((s + context_weight))
+
+    if $gaming; then
+        local game_pkg=$(get_current_game)
+        if [ -n "$game_pkg" ]; then
+            local game_mod=$(get_game_profile_modifier "$game_pkg")
+            s=$((s + game_mod))
+            local fg_boost=$(get_foreground_priority "$game_pkg")
+            s=$((s + fg_boost))
+        fi
+    fi
+
+    local cooling_boost=$(get_cooling_efficiency "$cur" "$gpu")
+    s=$((s + cooling_boost))
+
     [ "$s" -gt  100 ] && s=100
     [ "$s" -lt -100 ] && s=-100
 
@@ -259,7 +281,7 @@ ai_decide_policy() {
 
     # [FIX-4] Include confirmed game pkg in log line
     local game_pkg; game_pkg=$(get_current_game)
-    log_info "AI: cur=${cur}°C pred=${pred}°C gpu=${gpu}% gaming=${gaming}(${game_pkg}) t=${s_temp} p=${s_pred} g=${s_game} tr=${s_trend} score=${s} -> ${policy}"
+    log_info "AI: cur=${cur}°C pred=${pred}°C gpu=${gpu}% gaming=${gaming}(${game_pkg}) t=${s_temp} p=${s_pred} g=${s_game} tr=${s_trend} ctx=${context_weight} comf=${comfort_weight} score=${s} -> ${policy}"
     echo "$policy"
 }
 
@@ -329,8 +351,8 @@ perform_self_calibration() {
 # ─── Display State ────────────────────────────────────────────────────────────
 get_screen_state() {
     local state
-    state=$(dumpsys power 2>/dev/null | grep 'mHoldingDisplaySuspendBlocker' | cut -d= -f2)
-    if [ "$state" = "false" ]; then
+    state=$(cat /sys/class/backlight/panel0-backlight/brightness 2>/dev/null || echo "100")
+    if [ "$state" = "0" ]; then
         echo "off"
     else
         echo "on"
@@ -360,6 +382,7 @@ main_loop() {
         local gpu;  gpu=$(get_gpu_load)
 
         perform_self_calibration "$temp"
+        update_ema "$temp"
 
         # Watchdog Check
         if [ "$temp" -eq 45 ] && [ -z "$ACTIVE_ZONES" ]; then
@@ -376,6 +399,14 @@ main_loop() {
         fi
 
         local gaming; gaming=$(detect_gaming_context)
+
+        if $gaming; then
+            local game_pkg=$(get_current_game)
+            if [ -n "$game_pkg" ]; then
+                load_game_profile "$game_pkg"
+                update_game_profile "$game_pkg" "$temp"
+            fi
+        fi
 
         update_history "$temp"
         local slope; slope=$(calculate_trend "$TEMP_HISTORY")
@@ -395,6 +426,7 @@ main_loop() {
 
         if [ "$new_policy" != "$CURRENT_POLICY" ]; then
             apply_thermal_policy "$new_policy" "$gaming" "$temp"
+
             CURRENT_POLICY="$new_policy"
             LAST_POLICY_CHANGE=$(date +%s)
         fi

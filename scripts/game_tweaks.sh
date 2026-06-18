@@ -7,22 +7,26 @@ _apply_network_tweaks() {
     local enable="$1"
 
     if [ "$enable" = "true" ]; then
-        # Enable BBR congestion control if kernel supports it
-        if [ -f "/proc/sys/net/ipv4/tcp_available_congestion_control" ]; then
-            if grep -q "bbr" "/proc/sys/net/ipv4/tcp_available_congestion_control"; then
-                echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
+        if check_network_quality; then
+            # Enable BBR congestion control if kernel supports it
+            if [ -f "/proc/sys/net/ipv4/tcp_available_congestion_control" ]; then
+                if grep -q "bbr" "/proc/sys/net/ipv4/tcp_available_congestion_control"; then
+                    echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
+                fi
             fi
+            # Reduce TCP SYN retries to fail fast in games
+            echo 2 > /proc/sys/net/ipv4/tcp_syn_retries 2>/dev/null
+            echo 2 > /proc/sys/net/ipv4/tcp_synack_retries 2>/dev/null
+            # Disable Wi-Fi power saving (if supported by wlan driver path)
+            if [ -w "/sys/module/wlan/parameters/fwpath" ]; then
+                 # Note: actual wifi power save node varies heavily by device
+                 # Standard fallback is checking standard wlan0
+                 iw dev wlan0 set power_save off 2>/dev/null || true
+            fi
+            log_debug "Gaming network tweaks applied (BBR, Fast Fail, Wi-Fi PS Off)"
+        else
+            log_warn "Network quality poor, bypassing gaming network enhancements."
         fi
-        # Reduce TCP SYN retries to fail fast in games
-        echo 2 > /proc/sys/net/ipv4/tcp_syn_retries 2>/dev/null
-        echo 2 > /proc/sys/net/ipv4/tcp_synack_retries 2>/dev/null
-        # Disable Wi-Fi power saving (if supported by wlan driver path)
-        if [ -w "/sys/module/wlan/parameters/fwpath" ]; then
-             # Note: actual wifi power save node varies heavily by device
-             # Standard fallback is checking standard wlan0
-             iw dev wlan0 set power_save off 2>/dev/null || true
-        fi
-        log_debug "Gaming network tweaks applied (BBR, Fast Fail, Wi-Fi PS Off)"
     else
         # Restore to default
         if [ -f "/proc/sys/net/ipv4/tcp_available_congestion_control" ]; then
@@ -82,4 +86,20 @@ apply_gaming_enhancements() {
             rm -f "$STATE_FILE"
         fi
     fi
+}
+
+# Network Quality Check
+check_network_quality() {
+    local ping_result=$(ping -c 1 -W 1 8.8.8.8 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        # Ping successful, check latency
+        local latency=$(echo "$ping_result" | awk -F'time=' '/time=/{print $2}' | cut -d' ' -f1 | cut -d'.' -f1)
+        if [ "$latency" -gt 150 ]; then
+            log_debug "Network latency high ($latency ms), skipping aggressive network tweaks."
+            return 1 # High latency
+        fi
+        return 0 # Good quality
+    fi
+    log_debug "Network unreachable, skipping network tweaks."
+    return 1 # Unreachable
 }

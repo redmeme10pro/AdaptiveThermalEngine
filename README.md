@@ -43,6 +43,14 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.1.0
+- Implemented advanced predictive heat forecasting using EMA and thermal inertia.
+- Added Dynamic Policy Weighting for context-aware intelligence.
+- Session Learning Engine & Per-Game Adaptive Profiles.
+- Advanced full state snapshot and restore mechanisms.
+- Network and Thermal Comfort awareness added.
+- Log file automatically cleared on module install/update.
+
 ### Changelog v2.0.0
 - Added bootloop protection and thermal sensor watchdog.
 - Added self-calibration module to adapt to device cooling capabilities.

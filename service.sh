@@ -14,6 +14,8 @@ done
 sleep 5
 
 . "$MODDIR/scripts/logger.sh"
+. "$MODDIR/scripts/state_manager.sh"
+. "$MODDIR/scripts/advanced_ai.sh"
 . "$MODDIR/scripts/governor_tuner.sh"
 
 log_info "════════════════════════════════════════"
@@ -32,6 +34,7 @@ discover_cpu_topology
 # Confirmed running as pid=2123 on AOSP (was 2418 on HyperOS).
 # mi_thermald ships in the vendor partition — survives ROM flash.
 disable_stock_thermal
+take_snapshot 2>/dev/null
 
 # ─── Verify critical write paths before starting daemon ──────────────────────
 CRITICAL_OK=true
@@ -60,8 +63,10 @@ LOCK_FILE="/data/local/tmp/thermalai.lock"
 if [ -f "$LOCK_FILE" ]; then
     log_error "CRITICAL: Lock file found! Possible bootloop detected."
     log_error "Aborting ThermalAI startup and restoring stock thermal."
-    # Source governor tuner just to have access to restore_stock_thermal
+    # Source governor tuner just to have access to restore_snapshot
+    restore_stock_thermal
     . "$MODDIR/scripts/governor_tuner.sh" 2>/dev/null
+    restore_snapshot
     restore_stock_thermal
     exit 1
 fi
