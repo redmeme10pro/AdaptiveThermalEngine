@@ -96,6 +96,7 @@ init_thermal_zones() {
 
 get_composite_temp() {
     local tw=0 wt=0
+    local reads_succeeded=0
     for entry in $ACTIVE_ZONES; do
         local zid="${entry%%:*}" w="${entry##*:}"
         local t
@@ -104,19 +105,17 @@ get_composite_temp() {
         [ "$t" -lt 0 ] 2>/dev/null && continue
         [ "$t" -gt 120 ] 2>/dev/null && continue
         tw=$((tw + t*w)); wt=$((wt + w))
+        reads_succeeded=1
     done
-    [ "$wt" -eq 0 ] && echo "45" && return
-    echo $((tw/wt))
+    if [ "$reads_succeeded" -eq 1 ] && [ "$wt" -gt 0 ]; then
+        echo $((tw/wt))
+    else
+        # Return special failure indicator instead of just 45
+        echo "READ_FAILED:45"
+    fi
 }
 
-get_gpu_load() {
-    local l
-    l=$(cat /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null | awk '{print int($1)}')
-    [ -n "$l" ] && echo "$l" && return
-    l=$(cat /sys/kernel/gpu/gpu_busy 2>/dev/null | tr -d '% ')
-    [ -n "$l" ] && echo "$l" && return
-    echo "0"
-}
+# (get_gpu_load has been moved to game_detector.sh where it is universally sourced)
 
 # ─── History ──────────────────────────────────────────────────────────────────
 update_history() {
@@ -414,14 +413,24 @@ main_loop() {
                     ;;
             esac
         fi
-        local temp; temp=$(get_composite_temp)
+        local raw_temp_read; raw_temp_read=$(get_composite_temp)
+        local temp="${raw_temp_read}"
+
+        # Parse failure indicator
+        if case "$raw_temp_read" in READ_FAILED*) true;; *) false;; esac; then
+            TEMP_READ_FAILED="true"
+            temp="${raw_temp_read#READ_FAILED:}"
+        else
+            TEMP_READ_FAILED="false"
+        fi
+
         local gpu;  gpu=$(get_gpu_load)
 
         perform_self_calibration "$temp"
         update_ema "$temp"
 
         # Watchdog Check
-        if [ "$temp" -eq 45 ] && [ -z "$ACTIVE_ZONES" ]; then
+        if [ "$TEMP_READ_FAILED" = "true" ]; then
             WATCHDOG_FAILURES=$((WATCHDOG_FAILURES + 1))
         else
             WATCHDOG_FAILURES=0
