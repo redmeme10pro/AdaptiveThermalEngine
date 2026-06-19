@@ -13,11 +13,11 @@ BATT_CURRENT_MAX="/sys/class/power_supply/battery/constant_charge_current_max"
 
 take_snapshot() {
     log_info "Taking full state snapshot..."
-    echo "CPU_GOV=$(cat $CPU_GOV_PATH 2>/dev/null || echo 'schedutil')" > "$SNAPSHOT_FILE"
-    echo "GPU_PWR_MIN=$(cat $GPU_PWR_MIN 2>/dev/null || echo '0')" >> "$SNAPSHOT_FILE"
-    echo "GPU_PWR_MAX=$(cat $GPU_PWR_MAX 2>/dev/null || echo '0')" >> "$SNAPSHOT_FILE"
-    echo "SWAPPINESS=$(cat $SWAPPINESS_PATH 2>/dev/null || echo '100')" >> "$SNAPSHOT_FILE"
-    echo "BATT_CURRENT_MAX=$(cat $BATT_CURRENT_MAX 2>/dev/null || echo '5000000')" >> "$SNAPSHOT_FILE"
+    echo "CPU_GOV_VAL=$(cat $CPU_GOV_PATH 2>/dev/null || echo 'schedutil')" > "$SNAPSHOT_FILE"
+    echo "GPU_PWR_MIN_VAL=$(cat $GPU_PWR_MIN 2>/dev/null || echo '0')" >> "$SNAPSHOT_FILE"
+    echo "GPU_PWR_MAX_VAL=$(cat $GPU_PWR_MAX 2>/dev/null || echo '0')" >> "$SNAPSHOT_FILE"
+    echo "SWAPPINESS_VAL=$(cat $SWAPPINESS_PATH 2>/dev/null || echo '100')" >> "$SNAPSHOT_FILE"
+    echo "BATT_CURRENT_MAX_VAL=$(cat $BATT_CURRENT_MAX 2>/dev/null || echo '5000000')" >> "$SNAPSHOT_FILE"
     log_debug "Snapshot taken."
 }
 
@@ -25,11 +25,11 @@ restore_snapshot() {
     if [ -f "$SNAPSHOT_FILE" ]; then
         log_info "Restoring full state snapshot..."
         . "$SNAPSHOT_FILE"
-        echo "$CPU_GOV" > "$CPU_GOV_PATH" 2>/dev/null
-        echo "$GPU_PWR_MIN" > "$GPU_PWR_MIN" 2>/dev/null
-        echo "$GPU_PWR_MAX" > "$GPU_PWR_MAX" 2>/dev/null
-        echo "$SWAPPINESS" > "$SWAPPINESS_PATH" 2>/dev/null
-        echo "$BATT_CURRENT_MAX" > "$BATT_CURRENT_MAX" 2>/dev/null
+        echo "$CPU_GOV_VAL" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
+        echo "$GPU_PWR_MIN_VAL" > /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null
+        echo "$GPU_PWR_MAX_VAL" > /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null
+        echo "$SWAPPINESS_VAL" > /proc/sys/vm/swappiness 2>/dev/null
+        echo "$BATT_CURRENT_MAX_VAL" > /sys/class/power_supply/battery/constant_charge_current_max 2>/dev/null
         log_info "Snapshot restored."
     else
         log_warn "No snapshot file found to restore."

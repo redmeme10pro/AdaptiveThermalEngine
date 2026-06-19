@@ -50,6 +50,7 @@ keeping your device safe.
 - Fixed self-calibration data wiping upon device reboot.
 - Added 90-second game-exit cool-down profile to prevent post-game heat spikes.
 - Added proactive 1A compound charge limit when actively gaming and charging.
+- Updated smart charging algorithm to use battery temperature (rather than SoC temp) with fine-grained stepped current limits targeting <39°C.
 - Added ambient IIO sensor tracking to penalize thermal limits in hot environments.
 - Added dual-log system (`thermalai.log` and `thermalai_verbose.log`) for better debugging without noise.
 - Fixed `thermalair status` to show live memory data, fixed blacklist branch bugs, and cleaned up duplicate code.

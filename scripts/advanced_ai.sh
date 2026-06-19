@@ -52,6 +52,20 @@ get_context_score() {
          context_score=$((context_score - 10))
     fi
 
+    # Ambient Temperature Check via IIO Sensor
+    local ambient_node=$(ls /sys/bus/iio/devices/iio:device*/in_temp_input 2>/dev/null | head -1)
+    if [ -n "$ambient_node" ] && [ -f "$ambient_node" ]; then
+        local raw_ambient=$(cat "$ambient_node" 2>/dev/null || echo 0)
+        local ambient_temp=$((raw_ambient / 1000))
+        if [ "$ambient_temp" -gt 35 ]; then
+            context_score=$((context_score - 20))
+            log_debug "Ambient temp high (${ambient_temp}°C), applied -20 context penalty."
+        elif [ "$ambient_temp" -gt 32 ]; then
+            context_score=$((context_score - 10))
+            log_debug "Ambient temp warm (${ambient_temp}°C), applied -10 context penalty."
+        fi
+    fi
+
     echo "$context_score"
 }
 

@@ -47,6 +47,20 @@ TEMP_POWERSAVE="$BASE_TEMP_POWERSAVE"
 TEMP_CRITICAL="$BASE_TEMP_CRITICAL"
 
 CALIBRATION_FILE="/data/local/tmp/thermalai.calibration"
+CALIBRATION_OFFSET_FILE="/data/local/tmp/thermalai.calibration_offset"
+
+# Load saved offset
+if [ -f "$CALIBRATION_OFFSET_FILE" ]; then
+    saved_offset=$(cat "$CALIBRATION_OFFSET_FILE" 2>/dev/null || echo "0")
+    if [ "$saved_offset" -lt 0 ] && [ "$saved_offset" -ge -6 ]; then
+        log_info "Loaded persistent calibration offset: ${saved_offset}°C"
+        TEMP_COOL=$((BASE_TEMP_COOL + saved_offset))
+        TEMP_WARM=$((BASE_TEMP_WARM + saved_offset))
+        TEMP_HOT=$((BASE_TEMP_HOT + saved_offset))
+        TEMP_POWERSAVE=$((BASE_TEMP_POWERSAVE + saved_offset))
+        TEMP_CRITICAL=$((BASE_TEMP_CRITICAL + saved_offset))
+    fi
+fi
 
 # ─── State ────────────────────────────────────────────────────────────────────
 TEMP_HISTORY=""
@@ -56,6 +70,8 @@ CURRENT_POLICY="balanced"
 LAST_POLICY_CHANGE=0
 WATCHDOG_FAILURES=0
 WATCHDOG_LIMIT=5
+GAME_EXIT_COOLDOWN_UNTIL=0
+LAST_GAMING_STATE="false"
 
 # ─── Thermal zones ────────────────────────────────────────────────────────────
 _zone_weight() {
@@ -280,7 +296,7 @@ ai_decide_policy() {
 
     # [FIX-4] Include confirmed game pkg in log line
     local game_pkg; game_pkg=$(get_current_game)
-    log_info "AI: cur=${cur}°C pred=${pred}°C gpu=${gpu}% gaming=${gaming}(${game_pkg}) t=${s_temp} p=${s_pred} g=${s_game} tr=${s_trend} ctx=${context_weight} comf=${comfort_weight} score=${s} -> ${policy}"
+    log_debug "AI: cur=${cur}°C pred=${pred}°C gpu=${gpu}% gaming=${gaming}(${game_pkg}) t=${s_temp} p=${s_pred} g=${s_game} tr=${s_trend} ctx=${context_weight} comf=${comfort_weight} score=${s} -> ${policy}"
     echo "$policy"
 }
 
@@ -332,17 +348,25 @@ perform_self_calibration() {
             echo "$count" > "$CALIBRATION_FILE"
 
             if [ "$count" -ge 60 ]; then # E.g., device was > 68C for roughly 60 ticks (2 mins)
-                log_warn "Self-Calibration: Device running hot for extended period. Lowering thresholds by 2°C to protect hardware."
+                local current_offset=$(cat "$CALIBRATION_OFFSET_FILE" 2>/dev/null || echo "0")
+                if [ "$current_offset" -gt -6 ]; then
+                    local new_offset=$((current_offset - 2))
+                    log_warn "Self-Calibration: Device running hot for extended period. Lowering thresholds by 2°C (Total offset: ${new_offset}°C) to protect hardware."
 
-                # Apply dynamic shift
-                TEMP_COOL=$((BASE_TEMP_COOL - 2))
-                TEMP_WARM=$((BASE_TEMP_WARM - 2))
-                TEMP_HOT=$((BASE_TEMP_HOT - 2))
-                TEMP_POWERSAVE=$((BASE_TEMP_POWERSAVE - 2))
-                TEMP_CRITICAL=$((BASE_TEMP_CRITICAL - 2))
+                    # Apply dynamic shift
+                    TEMP_COOL=$((BASE_TEMP_COOL + new_offset))
+                    TEMP_WARM=$((BASE_TEMP_WARM + new_offset))
+                    TEMP_HOT=$((BASE_TEMP_HOT + new_offset))
+                    TEMP_POWERSAVE=$((BASE_TEMP_POWERSAVE + new_offset))
+                    TEMP_CRITICAL=$((BASE_TEMP_CRITICAL + new_offset))
 
-                # Reset counter so we don't infinitely scale
-                echo "0" > "$CALIBRATION_FILE"
+                    # Save offset and reset counter
+                    echo "$new_offset" > "$CALIBRATION_OFFSET_FILE"
+                    echo "0" > "$CALIBRATION_FILE"
+                else
+                    log_warn "Self-Calibration: Device extremely hot, but max offset (-6°C) reached. Cannot lower thresholds further."
+                    echo "0" > "$CALIBRATION_FILE"
+                fi
             fi
         fi
     else
@@ -352,14 +376,17 @@ perform_self_calibration() {
              if [ "$count" -gt 0 ]; then
                  count=$((count - 1))
                  echo "$count" > "$CALIBRATION_FILE"
-             elif [ "$TEMP_COOL" -ne "$BASE_TEMP_COOL" ]; then
-                 # If counter is 0 and we shifted, device has cooled completely. Restore thresholds.
-                 log_info "Self-Calibration: Device has recovered. Restoring original temperature thresholds."
-                 TEMP_COOL="$BASE_TEMP_COOL"
-                 TEMP_WARM="$BASE_TEMP_WARM"
-                 TEMP_HOT="$BASE_TEMP_HOT"
-                 TEMP_POWERSAVE="$BASE_TEMP_POWERSAVE"
-                 TEMP_CRITICAL="$BASE_TEMP_CRITICAL"
+             else
+                 local current_offset=$(cat "$CALIBRATION_OFFSET_FILE" 2>/dev/null || echo "0")
+                 if [ "$current_offset" -lt 0 ]; then
+                     log_info "Self-Calibration: Device has recovered. Restoring original temperature thresholds."
+                     TEMP_COOL="$BASE_TEMP_COOL"
+                     TEMP_WARM="$BASE_TEMP_WARM"
+                     TEMP_HOT="$BASE_TEMP_HOT"
+                     TEMP_POWERSAVE="$BASE_TEMP_POWERSAVE"
+                     TEMP_CRITICAL="$BASE_TEMP_CRITICAL"
+                     echo "0" > "$CALIBRATION_OFFSET_FILE"
+                 fi
              fi
         fi
     fi
@@ -442,6 +469,14 @@ main_loop() {
             restore_stock_thermal
             exit 1
         fi
+
+        local now_time=$(date +%s)
+        if [ "$LAST_GAMING_STATE" = "true" ] && [ "$gaming" = "false" ]; then
+            GAME_EXIT_COOLDOWN_UNTIL=$((now_time + 90))
+            log_info "Game exit detected. Post-game cooldown started for 90 seconds."
+        fi
+        LAST_GAMING_STATE="$gaming"
+
         local screen_state; screen_state=$(get_screen_state)
         local new_policy
 
@@ -449,6 +484,12 @@ main_loop() {
             new_policy="suspend"
         else
             new_policy=$(ai_decide_policy "$temp" "$gpu" "$gaming" "$pred" "$conf")
+
+            if [ "$now_time" -lt "$GAME_EXIT_COOLDOWN_UNTIL" ]; then
+                local remaining=$((GAME_EXIT_COOLDOWN_UNTIL - now_time))
+                new_policy="balanced"
+                log_debug "Cooling down: forcing balanced (${remaining}s remaining)"
+            fi
         fi
 
         # Stutter override: jank during balanced -> force conservative gaming

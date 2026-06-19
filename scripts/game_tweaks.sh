@@ -88,18 +88,18 @@ apply_gaming_enhancements() {
     fi
 }
 
-# Network Quality Check
+# Network Quality Check (Instant local interface check)
 check_network_quality() {
-    local ping_result=$(ping -c 1 -W 1 8.8.8.8 2>/dev/null)
-    if [ $? -eq 0 ]; then
-        # Ping successful, check latency
-        local latency=$(echo "$ping_result" | awk -F'time=' '/time=/{print $2}' | cut -d' ' -f1 | cut -d'.' -f1)
-        if [ "$latency" -gt 150 ]; then
-            log_debug "Network latency high ($latency ms), skipping aggressive network tweaks."
-            return 1 # High latency
+    # Check if any standard data interface is up (wlan0, ccmni, or rmnet data interfaces)
+    for iface in /sys/class/net/wlan0 /sys/class/net/rmnet_data* /sys/class/net/ccmni*; do
+        if [ -f "$iface/operstate" ]; then
+            local state=$(cat "$iface/operstate" 2>/dev/null)
+            if [ "$state" = "up" ]; then
+                return 0 # Network is active
+            fi
         fi
-        return 0 # Good quality
-    fi
-    log_debug "Network unreachable, skipping network tweaks."
+    done
+
+    log_debug "No active network interface found (airplane mode?), skipping network tweaks."
     return 1 # Unreachable
 }
