@@ -1,7 +1,7 @@
 id=thermalai
 name=ThermalAI - Intelligent Thermal Manager
-version=v2.3.0
-versionCode=230
+version=v2.3.1
+versionCode=231
 author=ThermalAI Project
-description=AI-driven adaptive thermal throttling for POCO F6 (peridot). v2.3.0: Advanced intelligent features (Predictive Forecasting, Dynamic Weighting, Per-Game Profiles, Snapshots, etc). Bootloop protection, self-calibration, smart battery charge control, suspend/screen-off cooling, and auto-gaming network/touch tweaks. Prevents frame drops while keeping the device cool without degrading UI smoothness.
+description=AI-driven adaptive thermal throttling for POCO F6 (peridot). v2.3.1: Bug fixes for state restore, watchdog logic, and offline network tweaks. Added compound gaming charging cap, 90s game-exit cooldown, dual-log verbose system, and ambient IIO sensor context awareness.
 updateJson=

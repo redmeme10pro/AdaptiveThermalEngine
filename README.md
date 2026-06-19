@@ -43,6 +43,17 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.3.1
+- Fixed state snapshot variable collision preventing GPU power level restoration.
+- Fixed thermal watchdog to properly catch thermal sensor failures.
+- Fixed blocking offline network pings causing latency during game transitions.
+- Fixed self-calibration data wiping upon device reboot.
+- Added 90-second game-exit cool-down profile to prevent post-game heat spikes.
+- Added proactive 1A compound charge limit when actively gaming and charging.
+- Added ambient IIO sensor tracking to penalize thermal limits in hot environments.
+- Added dual-log system (`thermalai.log` and `thermalai_verbose.log`) for better debugging without noise.
+- Fixed `thermalair status` to show live memory data, fixed blacklist branch bugs, and cleaned up duplicate code.
+
 ### Changelog v2.3.0
 - Fixed critical charging heating issue by drastically reducing charge current when battery hits 41C.
 - Added universal kernel compatibility fallbacks for TCP, CPU, GPU, and Charging across generic Android trees (Mediatek, Exynos, custom Snapdragons).
