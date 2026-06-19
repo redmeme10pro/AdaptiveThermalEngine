@@ -44,14 +44,14 @@ apply_charging_control() {
     # High Battery Temp Override (Protect Battery lifespan > 41C)
     if [ "$batt_temp" -ge 41 ]; then
         log_warn "Battery Temp High (${batt_temp}°C) - Throttling Charge"
-        sysfs_write "1000000" "$BATT_CURRENT_MAX"
+        echo "1000000" > "$BATT_CURRENT_MAX" 2>/dev/null
         return 0
     fi
 
     # SOC-based graceful degradation (Charge slower as it gets full)
     if [ "$batt_level" -ge 90 ]; then
         # Above 90%, limit to trickle regardless of thermal policy
-        sysfs_write "1000000" "$BATT_CURRENT_MAX"
+        echo "1000000" > "$BATT_CURRENT_MAX" 2>/dev/null
         return 0
     fi
 
@@ -93,7 +93,7 @@ apply_charging_control() {
 
     # Ensure we don't accidentally completely disable charging unless intended
     if [ "$max_current_ua" != "0" ]; then
-        sysfs_write "$max_current_ua" "$BATT_CURRENT_MAX"
+        echo "$max_current_ua" > "$BATT_CURRENT_MAX" 2>/dev/null
         apply_universal_charging_control "$max_current_ua"
         log_debug "Charging current limit set to $((max_current_ua / 1000))mA (policy=$policy)"
     fi
@@ -104,7 +104,7 @@ restore_charging_control() {
     # Qualcomm standard for "unlimited" or hardware max is usually very high or 0
     # Writing 5000000 (5A) usually restores full speed
     if [ -w "$BATT_CURRENT_MAX" ]; then
-         sysfs_write "5000000" "$BATT_CURRENT_MAX"
+         echo "5000000" > "$BATT_CURRENT_MAX" 2>/dev/null
          log_info "Charging limits restored to hardware default"
     fi
     apply_universal_charging_control "5000000"

@@ -11,12 +11,12 @@ _apply_network_tweaks() {
             # Enable BBR congestion control if kernel supports it
             if [ -f "/proc/sys/net/ipv4/tcp_available_congestion_control" ]; then
                 if grep -q "bbr" "/proc/sys/net/ipv4/tcp_available_congestion_control"; then
-                    sysfs_write "bbr" "/proc/sys/net/ipv4/tcp_congestion_control"
+                    echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
                 fi
             fi
             # Reduce TCP SYN retries to fail fast in games
-            sysfs_write 2 "/proc/sys/net/ipv4/tcp_syn_retries"
-            sysfs_write 2 "/proc/sys/net/ipv4/tcp_synack_retries"
+            echo 2 > /proc/sys/net/ipv4/tcp_syn_retries 2>/dev/null
+            echo 2 > /proc/sys/net/ipv4/tcp_synack_retries 2>/dev/null
             # Disable Wi-Fi power saving (if supported by wlan driver path)
             if [ -w "/sys/module/wlan/parameters/fwpath" ]; then
                  # Note: actual wifi power save node varies heavily by device
@@ -31,11 +31,11 @@ _apply_network_tweaks() {
         # Restore to default
         if [ -f "/proc/sys/net/ipv4/tcp_available_congestion_control" ]; then
             if grep -q "cubic" "/proc/sys/net/ipv4/tcp_available_congestion_control"; then
-                sysfs_write "cubic" "/proc/sys/net/ipv4/tcp_congestion_control"
+                echo "cubic" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
             fi
         fi
-        sysfs_write 6 "/proc/sys/net/ipv4/tcp_syn_retries"
-        sysfs_write 5 "/proc/sys/net/ipv4/tcp_synack_retries"
+        echo 6 > /proc/sys/net/ipv4/tcp_syn_retries 2>/dev/null
+        echo 5 > /proc/sys/net/ipv4/tcp_synack_retries 2>/dev/null
         iw dev wlan0 set power_save on 2>/dev/null || true
         log_debug "Network tweaks restored to default"
     fi
@@ -48,19 +48,19 @@ _apply_touch_display_tweaks() {
     if [ "$enable" = "true" ]; then
         # Force high touch sampling rate if available on Xiaomi/POCO
         if [ -w "/sys/class/touch/touch_dev/touch_game_mode" ]; then
-            sysfs_write 1 "/sys/class/touch/touch_dev/touch_game_mode"
+            echo 1 > /sys/class/touch/touch_dev/touch_game_mode 2>/dev/null
         fi
         if [ -w "/sys/devices/virtual/touch/tp_dev/bump_sample_rate" ]; then
-             sysfs_write 1 "/sys/devices/virtual/touch/tp_dev/bump_sample_rate"
+             echo 1 > /sys/devices/virtual/touch/tp_dev/bump_sample_rate 2>/dev/null
         fi
         log_debug "Gaming touch sampling tweaks applied"
     else
         # Restore touch mode
         if [ -w "/sys/class/touch/touch_dev/touch_game_mode" ]; then
-            sysfs_write 0 "/sys/class/touch/touch_dev/touch_game_mode"
+            echo 0 > /sys/class/touch/touch_dev/touch_game_mode 2>/dev/null
         fi
         if [ -w "/sys/devices/virtual/touch/tp_dev/bump_sample_rate" ]; then
-             sysfs_write 0 "/sys/devices/virtual/touch/tp_dev/bump_sample_rate"
+             echo 0 > /sys/devices/virtual/touch/tp_dev/bump_sample_rate 2>/dev/null
         fi
         log_debug "Touch sampling tweaks restored"
     fi

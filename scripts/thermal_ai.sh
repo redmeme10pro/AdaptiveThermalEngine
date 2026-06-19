@@ -234,7 +234,7 @@ ai_decide_policy() {
     [ "$s" -lt -100 ] && s=-100
 
     # Hysteresis policy mapping [FIX-2: performance threshold 65→55]
-    local policy
+    local policy=""
     case "$CURRENT_POLICY" in
         performance)
             [ "$s" -lt 45 ] && policy="balanced" || policy="performance" ;;
@@ -289,6 +289,24 @@ ai_decide_policy() {
 start_log_rotation() {
     local sec=$((LOG_ROTATE_MIN * 60))
     (while true; do
+        # Property-based override (Tasker / ADB / automation)
+        local forced_policy
+        forced_policy=$(getprop thermalai.force_policy 2>/dev/null)
+        if [ -n "$forced_policy" ] && [ "$forced_policy" != "none" ]; then
+            case "$forced_policy" in
+                performance|balanced|conservative|powersave|emergency_cool)
+                    log_info "Property override: thermalai.force_policy=$forced_policy"
+                    apply_thermal_policy "$forced_policy" "$gaming" "$temp"
+                    CURRENT_POLICY="$forced_policy"
+                    LAST_POLICY_CHANGE=$(date +%s)
+                    setprop thermalai.force_policy "none" 2>/dev/null
+                    ;;
+                *)
+                    log_warn "Invalid thermalai.force_policy value: $forced_policy"
+                    setprop thermalai.force_policy "none" 2>/dev/null
+                    ;;
+            esac
+        fi
         sleep "$sec"
         local now; now=$(date "+%Y-%m-%d %H:%M:%S")
         local buf; buf=$(tail -200 "$LOG_FILE" 2>/dev/null)
@@ -378,6 +396,24 @@ main_loop() {
     apply_thermal_policy "balanced" "false" "40"
 
     while true; do
+        # Property-based override (Tasker / ADB / automation)
+        local forced_policy
+        forced_policy=$(getprop thermalai.force_policy 2>/dev/null)
+        if [ -n "$forced_policy" ] && [ "$forced_policy" != "none" ]; then
+            case "$forced_policy" in
+                performance|balanced|conservative|powersave|emergency_cool)
+                    log_info "Property override: thermalai.force_policy=$forced_policy"
+                    apply_thermal_policy "$forced_policy" "$gaming" "$temp"
+                    CURRENT_POLICY="$forced_policy"
+                    LAST_POLICY_CHANGE=$(date +%s)
+                    setprop thermalai.force_policy "none" 2>/dev/null
+                    ;;
+                *)
+                    log_warn "Invalid thermalai.force_policy value: $forced_policy"
+                    setprop thermalai.force_policy "none" 2>/dev/null
+                    ;;
+            esac
+        fi
         local temp; temp=$(get_composite_temp)
         local gpu;  gpu=$(get_gpu_load)
 
@@ -397,24 +433,6 @@ main_loop() {
             restore_stock_thermal
             exit 1
         fi
-
-        local gaming; gaming=$(detect_gaming_context)
-
-        if $gaming; then
-            local game_pkg=$(get_current_game)
-            if [ -n "$game_pkg" ]; then
-                load_game_profile "$game_pkg"
-                update_game_profile "$game_pkg" "$temp"
-            fi
-        fi
-
-        update_history "$temp"
-        local slope; slope=$(calculate_trend "$TEMP_HISTORY")
-        update_trend_ema "$slope"
-
-        local pred; pred=$(predict_temp "$temp" "$slope" "$PREDICTION_WINDOW")
-        local conf; conf=$(calculate_confidence)
-
         local screen_state; screen_state=$(get_screen_state)
         local new_policy
 
@@ -424,8 +442,21 @@ main_loop() {
             new_policy=$(ai_decide_policy "$temp" "$gpu" "$gaming" "$pred" "$conf")
         fi
 
+        # Stutter override: jank during balanced -> force conservative gaming
+        if $gaming && [ "$new_policy" = "balanced" ]; then
+            local game_pkg
+            game_pkg=$(get_current_game)
+            local stutter
+            stutter=$(detect_frame_stutter "$game_pkg")
+            if [ "$stutter" = "true" ]; then
+                log_info "Stutter override: balanced -> conservative (jank detected)"
+                new_policy="conservative"
+            fi
+        fi
+
         if [ "$new_policy" != "$CURRENT_POLICY" ]; then
             apply_thermal_policy "$new_policy" "$gaming" "$temp"
+            log_info "Policy change: temp=${cur} gpu=${gpu} gaming=${gaming} -> ${new_policy}"
 
             CURRENT_POLICY="$new_policy"
             LAST_POLICY_CHANGE=$(date +%s)

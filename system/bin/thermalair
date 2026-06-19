@@ -7,6 +7,7 @@ LOG_FILE="/data/local/tmp/thermalai.log"
 PID_FILE="/data/local/tmp/thermalai.pid"
 
 . "$MODDIR/scripts/logger.sh"       2>/dev/null || true
+. "$MODDIR/scripts/advanced_ai.sh" 2>/dev/null || true
 . "$MODDIR/scripts/governor_tuner.sh" 2>/dev/null || true
 . "$MODDIR/scripts/game_detector.sh"  2>/dev/null || true
 
@@ -214,16 +215,79 @@ cmd_policy() {
 }
 
 # ─── Dispatch ─────────────────────────────────────────────────────────────────
+cmd_history() {
+    local n="${1:-30}"
+    echo "── ThermalAI Session History (last $n policy changes) ──"
+    printf "  %-19s  %-6s  %-4s  %-12s  %s\n" "Time" "Temp" "GPU" "Gaming" "Policy"
+    echo "  ─────────────────────────────────────────────────────────────"
+    grep "Policy change:" "$LOG_FILE" 2>/dev/null | tail -n "$n" | while IFS= read -r line; do
+        local ts cur gpu gaming policy
+        ts=$(echo "$line"   | grep -o '\[.*\]' | head -1 | tr -d '[]')
+        cur=$(echo "$line"  | grep -o 'temp=[0-9]*'    | cut -d= -f2)
+        gpu=$(echo "$line"  | grep -o 'gpu=[0-9]*'     | cut -d= -f2)
+        gaming=$(echo "$line" | grep -o 'gaming=[a-z]*' | cut -d= -f2)
+        policy=$(echo "$line" | grep -o '-> .*'         | sed 's/-> //' )
+        printf "  %-19s  %-6s  %-4s  %-12s  %s\n" "$ts" "${cur}C" "${gpu}%" "$gaming" "$policy"
+    done
+    echo ""
+    echo "  Tip: run 'thermalair logs' for full verbose output."
+}
+
+cmd_calibrate() {
+    local subcmd="${1:-status}"
+cmd_history() {
+    local n="${1:-30}"
+    echo "── ThermalAI Session History (last $n policy changes) ──"
+    printf "  %-19s  %-6s  %-4s  %-12s  %s\n" "Time" "Temp" "GPU" "Gaming" "Policy"
+    echo "  ─────────────────────────────────────────────────────────────"
+    grep "Policy change:" "$LOG_FILE" 2>/dev/null | tail -n "$n" | while IFS= read -r line; do
+        local ts cur gpu gaming policy
+        ts=$(echo "$line"   | grep -o '\[.*\]' | head -1 | tr -d '[]')
+        cur=$(echo "$line"  | grep -o 'temp=[0-9]*'    | cut -d= -f2)
+        gpu=$(echo "$line"  | grep -o 'gpu=[0-9]*'     | cut -d= -f2)
+        gaming=$(echo "$line" | grep -o 'gaming=[a-z]*' | cut -d= -f2)
+        policy=$(echo "$line" | grep -o '-> .*'         | sed 's/-> //' )
+        printf "  %-19s  %-6s  %-4s  %-12s  %s\n" "$ts" "${cur}C" "${gpu}%" "$gaming" "$policy"
+    done
+    echo ""
+    echo "  Tip: run 'thermalair logs' for full verbose output."
+}
+
+cmd_calibrate() {
+    local subcmd="${1:-status}"
+    case "$subcmd" in
+        reset)
+            rm -f /data/local/tmp/thermalai.calibration
+            rm -f /data/local/tmp/thermalai.calibration_offset
+            echo "Calibration data cleared."
+            echo "Thresholds will reset to base values on next daemon start."
+            ;;
+        status)
+            local offset
+            offset=$(cat /data/local/tmp/thermalai.calibration_offset 2>/dev/null || echo "0")
+            local counter
+            counter=$(cat /data/local/tmp/thermalai.calibration 2>/dev/null || echo "0")
+            echo "Calibration offset : ${offset} degrees C (max allowed: -6)"
+            echo "Hot-tick counter   : $counter / 60"
+            ;;
+        *)
+            echo "Usage: thermalair calibrate [status|reset]"
+            ;;
+    esac
+}
+
 case "${1:-status}" in
     status)  cmd_status ;;
     temps)   cmd_temps ;;
     logs)    cmd_logs "${2:-60}" ;;
+    history) cmd_history "${2:-30}" ;;
+    calibrate) cmd_calibrate "$2" ;;
     gaming)  cmd_gaming ;;
     stop)    cmd_stop ;;
     start)   cmd_start ;;
     restart) cmd_stop; sleep 2; cmd_start ;;
     policy)  cmd_policy "$2" ;;
     *)
-        echo "Usage: thermalair [status|temps|logs [N]|gaming|stop|start|restart|policy <name>]"
+        echo "Usage: thermalair [status|temps|logs [N]|history [N]|gaming|stop|start|restart|policy <name>|calibrate reset]"
         exit 1 ;;
 esac

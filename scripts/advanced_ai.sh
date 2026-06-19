@@ -182,3 +182,31 @@ get_foreground_priority() {
 
     echo "$priority_boost"
 }
+
+detect_frame_stutter() {
+    local game_pkg="$1"
+    [ -z "$game_pkg" ] && echo "false" && return
+
+    # Find PID of the game process
+    local game_pid=""
+    for pid_cmdline in /proc/[0-9]*/cmdline; do
+        local pid="${pid_cmdline%/cmdline}"
+        pid="${pid##*/proc/}"
+        local pkg
+        pkg=$(cat "$pid_cmdline" 2>/dev/null | tr '\0' '\n' | head -1)
+        [ "$pkg" = "$game_pkg" ] && game_pid="$pid" && break
+    done
+    [ -z "$game_pid" ] && echo "false" && return
+
+    # schedstat field 2 = total wait time in nanoseconds
+    local wait_ns
+    wait_ns=$(awk '{print $2}' /proc/$game_pid/schedstat 2>/dev/null || echo "0")
+
+    # Threshold: >50ms accumulated wait this tick = scheduling starvation
+    if [ "$wait_ns" -gt 50000000 ]; then
+        log_debug "Stutter detected: game=$game_pkg wait=${wait_ns}ns"
+        echo "true"
+        return
+    fi
+    echo "false"
+}

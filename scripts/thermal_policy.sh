@@ -249,11 +249,11 @@ _constrain_background_to_little() {
 #   foreground: 0-5  (LITTLE + BIG, not PRIME)
 #   top-app: 0-7  (all cores)
 _restore_cpusets() {
-    [ -w /dev/cpuset/background/cpus ]        && sysfs_write "0-1" "/dev/cpuset/background/cpus" || true
-    [ -w /dev/cpuset/system-background/cpus ] && sysfs_write "0-1" "/dev/cpuset/system-background/cpus" || true
-    [ -w /dev/cpuset/foreground/cpus ]        && sysfs_write "0-5" "/dev/cpuset/foreground/cpus" || true
+    [ -w /dev/cpuset/background/cpus ]        && echo "0-1" > /dev/cpuset/background/cpus 2>/dev/null || true
+    [ -w /dev/cpuset/system-background/cpus ] && echo "0-1" > /dev/cpuset/system-background/cpus 2>/dev/null || true
+    [ -w /dev/cpuset/foreground/cpus ]        && echo "0-5" > /dev/cpuset/foreground/cpus 2>/dev/null || true
     # top-app always gets all cores
-    [ -w /dev/cpuset/top-app/cpus ]           && sysfs_write "0-7" "/dev/cpuset/top-app/cpus" || true
+    [ -w /dev/cpuset/top-app/cpus ]           && echo "0-7" > /dev/cpuset/top-app/cpus 2>/dev/null || true
 }
 
 # Drop page cache only (safe during gaming — no app data lost)
@@ -288,7 +288,7 @@ _apply_vm_params() {
         balanced)
             local swap_val=40
             $gaming && swap_val=20
-            sysfs_write "$swap_val" "/proc/sys/vm/swappiness" || true
+            echo "$swap_val" > /proc/sys/vm/swappiness 2>/dev/null || true
             echo 50  > /proc/sys/vm/vfs_cache_pressure        2>/dev/null || true
             echo 3000 > /proc/sys/vm/dirty_expire_centisecs   2>/dev/null || true
             echo 0   > /proc/sys/vm/compaction_proactiveness  2>/dev/null || true
@@ -296,7 +296,7 @@ _apply_vm_params() {
         conservative)
             local swap_val=60
             $gaming && swap_val=30
-            sysfs_write "$swap_val" "/proc/sys/vm/swappiness" || true
+            echo "$swap_val" > /proc/sys/vm/swappiness 2>/dev/null || true
             echo 75  > /proc/sys/vm/vfs_cache_pressure        2>/dev/null || true
             echo 2000 > /proc/sys/vm/dirty_expire_centisecs   2>/dev/null || true
             ;;

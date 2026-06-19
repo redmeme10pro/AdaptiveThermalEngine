@@ -256,7 +256,7 @@ apply_universal_cpu_tuning() {
     local governor="$2"
 
     local gov_path="/sys/devices/system/cpu/cpu${cpu_num}/cpufreq/scaling_governor"
-    sysfs_write "$governor" "$gov_path"
+    echo "$governor" > "$gov_path" 2>/dev/null
 
     # Try generic schedutil tuning if WALT is missing
     local schedutil_path="/sys/devices/system/cpu/cpu${cpu_num}/cpufreq/schedutil"
