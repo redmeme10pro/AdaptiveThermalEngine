@@ -149,10 +149,10 @@ get_composite_temp() {
 
 # ─── History ──────────────────────────────────────────────────────────────────
 update_history() {
-    TEMP_HISTORY="$TEMP_HISTORY $1"
+    TEMP_HISTORY="${TEMP_HISTORY:+$TEMP_HISTORY }$1"
     TEMP_HISTORY_COUNT=$((TEMP_HISTORY_COUNT+1))
     if [ "$TEMP_HISTORY_COUNT" -gt "$TEMP_HISTORY_SIZE" ]; then
-        TEMP_HISTORY=$(echo "$TEMP_HISTORY" | awk '{for(i=2;i<=NF;i++)printf "%s%s",$i,(i==NF?"\n":" ")}')
+        TEMP_HISTORY=$(echo "$TEMP_HISTORY" | awk '{for(i=2;i<=NF;i++)printf "%s%s",$i,(i==NF?"":" ")}')
         TEMP_HISTORY_COUNT=$((TEMP_HISTORY_COUNT-1))
     fi
 }
@@ -229,7 +229,7 @@ ai_decide_policy() {
     fi
 
     # Gaming boost
-    if $gaming; then
+    if [ "$gaming" = "true" ]; then
         s_game=$GAMING_SCORE_BOOST
         [ "$gpu" -gt 90 ] && s_game=$((s_game - 15))
         [ "$gpu" -gt 70 ] && [ "$gpu" -le 90 ] && s_game=$((s_game - 8))
@@ -248,7 +248,7 @@ ai_decide_policy() {
 
     log_debug "VERBOSE AI CALC: s_temp=$s_temp s_pred=$s_pred s_game=$s_game s_trend=$s_trend context_weight=$context_weight comfort_weight=$comfort_weight"
 
-    if $gaming; then
+    if [ "$gaming" = "true" ]; then
         if [ -n "$game_pkg" ]; then
             local game_mod=$(get_game_profile_modifier "$game_pkg")
             s=$((s + game_mod))
@@ -305,7 +305,7 @@ ai_decide_policy() {
     fi
 
     # Diagnostic: warn if high GPU but gaming=false (detection suspect)
-    if [ "$gpu" -ge 40 ] && ! $gaming; then
+    if [ "$gpu" -ge 40 ] && [ "$gaming" != "true" ]; then
         log_debug "WARN: gpu=${gpu}% but gaming=false — check detector"
     fi
 
@@ -467,6 +467,18 @@ main_loop() {
 
         local gpu;  gpu=$(get_gpu_load)
 
+        # Execute game detector globally, do not use $(...) subshell so state isn't lost
+        detect_gaming_context
+        local gaming="$_LAST_DETECTION_RESULT"
+
+        update_history "$temp"
+        local trend; trend=$(calculate_trend "$TEMP_HISTORY")
+        update_trend_ema "$trend"
+
+        local pred conf
+        pred=$(predict_temp "$temp" "$TREND_SCORE" "$PREDICTION_WINDOW")
+        conf=$(calculate_confidence)
+
         perform_self_calibration "$temp"
         update_ema "$temp"
 
@@ -534,7 +546,7 @@ main_loop() {
         fi
 
         # Stutter override: jank during balanced -> force conservative gaming
-        if $gaming && [ "$new_policy" = "balanced" ]; then
+        if [ "$gaming" = "true" ] && [ "$new_policy" = "balanced" ]; then
             local game_pkg
             game_pkg=$(get_current_game)
             local stutter
@@ -547,7 +559,7 @@ main_loop() {
 
         if [ "$new_policy" != "$CURRENT_POLICY" ]; then
             apply_thermal_policy "$new_policy" "$gaming" "$temp"
-            log_info "Policy change: temp=${cur} gpu=${gpu} gaming=${gaming} -> ${new_policy}"
+            log_info "Policy change: temp=${temp} gpu=${gpu} gaming=${gaming} -> ${new_policy}"
 
             CURRENT_POLICY="$new_policy"
             LAST_POLICY_CHANGE=$(date +%s)
@@ -555,7 +567,7 @@ main_loop() {
 
         if [ "$screen_state" = "off" ]; then
             sleep "$((POLL_INTERVAL * 2))" # Poll slower when screen is off
-        elif $gaming || [ "$gpu" -ge "$GPU_GAMING_THRESHOLD" ]; then
+        elif [ "$gaming" = "true" ] || [ "$gpu" -ge "$GPU_GAMING_THRESHOLD" ]; then
             if [ "$TREND_SCORE" -gt 15 ]; then
                 sleep 0 # Skip sleep entirely
             elif [ "$TREND_SCORE" -gt 8 ]; then

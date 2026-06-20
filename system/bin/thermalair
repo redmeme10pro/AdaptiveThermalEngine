@@ -190,7 +190,8 @@ cmd_gaming() {
 
     local gpu game pkg
     gpu=$(get_gpu_load)
-    game=$(detect_gaming_context)
+    detect_gaming_context
+    game="$_LAST_DETECTION_RESULT"
     pkg=$(get_current_game)
 
     echo "Detected Game Pkg  : ${pkg:-<not detected>}"

@@ -43,6 +43,12 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.3.3
+- Fixed KernelSU `/proc` isolation causing total failure of foreground game detection (fallback to `status`).
+- Fixed a massive subshell variable-loss bug that was silently clearing game package names and causing dumpsys spam.
+- Fixed an empty `TEMP_HISTORY` string initialization bug that broke AI trend prediction entirely.
+- Fixed a bug where a +35 gaming score boost was permanently applied even when idle.
+
 ### Changelog v2.3.2
 - Fixed blank `p=` and `comf=` variables in `thermalai.log` and added verbose calculation logs for better debugging.
 - Broadened universal fast-charging limitation paths to cover specific AOSP variants and deeply nested `power_supply` nodes.
