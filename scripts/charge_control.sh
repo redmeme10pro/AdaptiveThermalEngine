@@ -23,7 +23,6 @@ get_robust_battery_temp() {
     # Usually in tenths of a degree (350 = 35.0C), but sometimes in millidegrees (35000 = 35.0C).
     local paths="
 /sys/class/power_supply/battery/temp
-/sys/class/thermal/thermal_zone49/temp
 /sys/class/thermal/thermal_zone54/temp
 /sys/class/thermal/thermal_zone60/temp
 "
@@ -53,7 +52,7 @@ get_robust_battery_temp() {
         if [ -f "$tz_type" ]; then
             local type_val
             type_val=$(cat "$tz_type" 2>/dev/null || echo "")
-            if case "$type_val" in *battery*|*charger_therm*|*quiet_therm*|*vbat*) true;; *) false;; esac; then
+            if case "$type_val" in *battery*|*charger_therm*|*vbat*) true;; *) false;; esac; then
                 local tz_dir="${tz_type%/*}"
                 if [ -f "$tz_dir/temp" ]; then
                     local raw

@@ -43,6 +43,10 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.3.4
+- Removed `quiet_therm` (skin sensor) from battery temperature fallbacks.
+- Cleaned up duplicated property override subshell logic breaking main loop execution.
+
 ### Changelog v2.3.3
 - Fixed KernelSU `/proc` isolation causing total failure of foreground game detection (fallback to `status`).
 - Fixed a massive subshell variable-loss bug that was silently clearing game package names and causing dumpsys spam.
