@@ -91,20 +91,35 @@ apply_charging_control() {
 
     local current_plugged=$(cat /sys/class/power_supply/battery/status 2>/dev/null || echo "Unknown")
 
-    if [ "$is_gaming" = "true" ] && [ "$current_plugged" = "Charging" ]; then
-        if [ "$batt_temp" -ge 35 ]; then
-            log_warn "Compound Guard: Gaming + Charging (batt_temp=${batt_temp}°C). Capping charge at 1A."
-            sysfs_write "1000000" "$BATT_CURRENT_MAX"
-            apply_universal_charging_control "1000000"
-        else
-            log_warn "Compound Guard: Gaming + Charging (batt_temp=${batt_temp}°C). Capping charge at 2A."
-            sysfs_write "2000000" "$BATT_CURRENT_MAX"
-            apply_universal_charging_control "2000000"
-        fi
+    # Only enforce limits if the device is actually charging
+    if [ "$current_plugged" != "Charging" ]; then
+        LAST_APPLIED_CHARGE_LIMIT=""
         return 0
     fi
 
-    if [ ! -w "$BATT_CURRENT_MAX" ]; then
+    if [ "$is_gaming" = "true" ]; then
+        if [ "$batt_temp" -ge 35 ]; then
+            max_current_ua="1000000"
+            if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
+                log_warn "Compound Guard: Gaming + Charging (batt_temp=${batt_temp}°C). Capping charge at 1A."
+                LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
+            fi
+        else
+            max_current_ua="2000000"
+            if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
+                log_warn "Compound Guard: Gaming + Charging (batt_temp=${batt_temp}°C). Capping charge at 2A."
+                LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
+            fi
+        fi
+
+        if [ -w "$BATT_CURRENT_MAX" ]; then
+            sysfs_write "$max_current_ua" "$BATT_CURRENT_MAX"
+        fi
+        apply_universal_charging_control "$max_current_ua"
+
+        if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
+            echo "[$(date "+%Y-%m-%d %H:%M:%S")] [DEBUG] Charging current limit set to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C)" >> /data/local/tmp/thermalai_verbose.log 2>/dev/null
+        fi
         return 0
     fi
 
@@ -117,14 +132,22 @@ apply_charging_control() {
     # SOC-based graceful degradation (Charge slower as it gets full)
     if [ "$batt_level" -ge 90 ]; then
         # Above 90%, limit to trickle regardless of thermal policy
-        sysfs_write "1000000" "$BATT_CURRENT_MAX"
-        apply_universal_charging_control "1000000"
+        max_current_ua="1000000"
+        if [ -w "$BATT_CURRENT_MAX" ]; then
+            sysfs_write "$max_current_ua" "$BATT_CURRENT_MAX"
+        fi
+        apply_universal_charging_control "$max_current_ua"
+
+        if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
+            echo "[$(date "+%Y-%m-%d %H:%M:%S")] [DEBUG] Charging current limit set to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C)" >> /data/local/tmp/thermalai_verbose.log 2>/dev/null
+            log_info "Battery >= 90%. Trickle charging at 1A."
+            LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
+        fi
         return 0
     fi
 
     # Target: keep battery below 39C
     if [ "$batt_temp" -ge 39 ]; then
-        log_warn "Battery Temp Critical (${batt_temp}°C) - Throttling to trickle charge"
         max_current_ua="500000"
     elif [ "$batt_temp" -ge 38 ]; then
         max_current_ua="1000000"
@@ -138,9 +161,23 @@ apply_charging_control() {
 
     # Ensure we don't accidentally completely disable charging unless intended
     if [ "$max_current_ua" != "0" ]; then
-        sysfs_write "$max_current_ua" "$BATT_CURRENT_MAX"
+        if [ -w "$BATT_CURRENT_MAX" ]; then
+            sysfs_write "$max_current_ua" "$BATT_CURRENT_MAX"
+        fi
         apply_universal_charging_control "$max_current_ua"
-        log_debug "Charging current limit set to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C)"
+
+        if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
+            echo "[$(date "+%Y-%m-%d %H:%M:%S")] [DEBUG] Charging current limit set to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C)" >> /data/local/tmp/thermalai_verbose.log 2>/dev/null
+
+            if [ "$max_current_ua" = "500000" ]; then
+                log_warn "Battery Temp Critical (${batt_temp}°C) - Throttling to trickle charge"
+            elif [ "$max_current_ua" = "5000000" ]; then
+                log_info "Charging limit released to 5A (batt_temp=${batt_temp}°C)"
+            else
+                log_info "Charging limit adjusted to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C)"
+            fi
+            LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
+        fi
     fi
 }
 

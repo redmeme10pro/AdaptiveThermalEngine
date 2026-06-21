@@ -187,7 +187,7 @@ update_trend_ema() {
 }
 
 predict_temp() {
-    local p=$(($1 + $2*$3/100))
+    local p=$(($1 + $2*$3/10))
     [ "$2" -gt 50 ] && p=$((p*85/100))
     [ "$p" -gt 100 ] && p=100; [ "$p" -lt 20 ] && p=20; echo "$p"
 }
@@ -481,6 +481,9 @@ main_loop() {
 
         perform_self_calibration "$temp"
         update_ema "$temp"
+
+        # Apply charging control every tick to guarantee hardware hasn't reset it
+        apply_charging_control "$CURRENT_POLICY" "$gaming"
 
         # Watchdog Check
         if [ "$TEMP_READ_FAILED" = "true" ]; then
