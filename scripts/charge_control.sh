@@ -105,8 +105,8 @@ apply_charging_control() {
         next_state="EMERGENCY"
     elif [ "$batt_temp" -ge 37 ]; then
         next_state="THERMAL_THROTTLE"
-    elif [ "$batt_temp" -le 35 ] && [ "$CHARGE_STATE" = "THERMAL_THROTTLE" ] || [ "$CHARGE_STATE" = "EMERGENCY" ]; then
-        # Hysteresis: Only exit thermal throttling when temp drops below 35C
+    elif [ "$batt_temp" -le 35 ] && { [ "$CHARGE_STATE" = "THERMAL_THROTTLE" ] || [ "$CHARGE_STATE" = "EMERGENCY" ]; }; then
+        # Hysteresis: Only exit thermal throttling/emergency when temp drops to 35C
         if [ "$realtime_gaming" = "true" ]; then
             next_state="GAMING"
         else

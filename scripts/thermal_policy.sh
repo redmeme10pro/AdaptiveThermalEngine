@@ -387,7 +387,11 @@ _apply_cpuset() {
 
     case "$policy" in
         conservative|powersave)
-            $gaming && _constrain_background_to_little || _restore_cpusets
+            if [ "$gaming" = "true" ]; then
+                _constrain_background_to_little
+            else
+                _restore_cpusets
+            fi
             ;;
         emergency_cool)
             # In emergency: everything except top-app goes to LITTLE

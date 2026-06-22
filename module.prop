@@ -1,7 +1,7 @@
 id=thermalai
 name=ThermalAI - Intelligent Thermal Manager
-version=v2.3.9
-versionCode=239
+version=v2.3.10
+versionCode=240
 author=ThermalAI Project
-description=AI-driven adaptive thermal throttling for Android. v2.3.9: Complete charging state machine redesign with battery temp hysteresis.
+description=AI-driven adaptive thermal throttling for Android. v2.3.10: Fixed bash logic operators in cpuset constraints and hysteresis checks.
 updateJson=

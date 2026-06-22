@@ -43,6 +43,10 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.3.10
+- Fixed an operator precedence bug that caused the charging state machine to exit emergency protection too early.
+- Fixed a bash execution bug in `_apply_cpuset` where core isolation constraints would be automatically rolled back if sysfs writes failed.
+
 ### Changelog v2.3.9
 - **Charging State Machine**: Completely redesigned the charging module into a state machine (`NORMAL`, `GAMING`, `THERMAL_THROTTLE`, `EMERGENCY`).
 - **Hysteresis**: Implemented proper battery temperature hysteresis (throttle at 37°C, don't recover until 35°C) to prevent charging loops.
