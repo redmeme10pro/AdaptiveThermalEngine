@@ -1,7 +1,7 @@
 id=thermalai
 name=ThermalAI - Intelligent Thermal Manager
-version=v2.3.6
-versionCode=236
+version=v2.3.7
+versionCode=237
 author=ThermalAI Project
-description=AI-driven adaptive thermal throttling for Android. v2.3.6: Full universal compatibility update. Agnostic CPU/GPU governor fallbacks, dynamic cgroups, and multi-kernel path detection.
+description=AI-driven adaptive thermal throttling for Android. v2.3.7: Fixed verbose logging conditions in charging.
 updateJson=

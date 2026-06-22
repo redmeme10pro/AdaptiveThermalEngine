@@ -43,6 +43,9 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.3.7
+- Fixed verbose log echo failing to print gaming charge status properly.
+
 ### Changelog v2.3.6
 - **Universal Governor Support**: Automatically detects and uses `walt`, `schedutil`, `interactive`, `ondemand`, or `conservative` based on the running kernel rather than hardcoding.
 - **Universal GPU Support**: Adreno `kgsl` paths now gracefully fall back to generic `devfreq` paths (in Hz) to support AOSP/minimal kernels, Mali, and Exynos devices.

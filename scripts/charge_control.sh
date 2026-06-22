@@ -101,13 +101,11 @@ apply_charging_control() {
             max_current_ua="1000000"
             if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
                 log_warn "Compound Guard: Gaming + Charging (batt_temp=${batt_temp}°C). Capping charge at 1A."
-                LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
             fi
         else
             max_current_ua="2000000"
             if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
                 log_warn "Compound Guard: Gaming + Charging (batt_temp=${batt_temp}°C). Capping charge at 2A."
-                LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
             fi
         fi
 
@@ -118,6 +116,7 @@ apply_charging_control() {
 
         if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
             echo "[$(date "+%Y-%m-%d %H:%M:%S")] [DEBUG] Charging current limit set to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C)" >> /data/local/tmp/thermalai_verbose.log 2>/dev/null
+            LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
         fi
         return 0
     fi
