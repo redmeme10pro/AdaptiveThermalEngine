@@ -83,6 +83,7 @@ ADAPTIVE_CHARGE_CURRENT_UA=5000000
 ADAPTIVE_LAST_EVAL_TIME=0
 ADAPTIVE_LAST_BATT_LEVEL=0
 ADAPTIVE_LAST_BATT_TEMP=0
+LAST_ENFORCE_TIME=0
 
 apply_charging_control() {
     local realtime_gaming="$1"  # Unlatched true/false indicating instant game status
@@ -203,18 +204,19 @@ apply_charging_control() {
 
     local max_current_ua="$ADAPTIVE_CHARGE_CURRENT_UA"
 
-    # 3. PMIC Starvation Protection (Screen On)
-    # If the screen is on and we are not in emergency thermal state (>40C),
+    # 3. Apply SOC-based graceful degradation
+    # Cap fast charging to 1A if battery is nearly full (>= 90%)
+    if [ "$batt_level" -ge 90 ] && [ "$max_current_ua" -gt 1000000 ]; then
+        max_current_ua="1000000"
+    fi
+
+    # 4. PMIC Starvation Protection (Screen On)
+    # Applied AFTER the SOC cap. If the screen is on and we are not in emergency thermal state (>40C),
     # never drop below 1.5A to ensure the UI stays smooth and PMIC doesn't throttle CPU/GPU.
     if [ "$is_screen_on" = "true" ] && [ "$batt_temp" -lt 40 ]; then
         if [ "$max_current_ua" -lt 1500000 ]; then
             max_current_ua=1500000
         fi
-    fi
-
-    # 4. Apply SOC-based graceful degradation overriding everything except emergency limits
-    if [ "$batt_level" -ge 90 ] && [ "$max_current_ua" -gt 1000000 ]; then
-        max_current_ua="1000000"
     fi
 
     # 5. Hardware Enforcement
@@ -233,12 +235,18 @@ apply_charging_control() {
         fi
 
         LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
+        LAST_ENFORCE_TIME="$current_time"
     else
-        # Prevent hardware resetting it under our nose without spamming log
-        if [ -w "$BATT_CURRENT_MAX" ]; then
-            sysfs_write "$max_current_ua" "$BATT_CURRENT_MAX"
+        # Prevent hardware resetting it under our nose without spamming log.
+        # Rate limit to once every 30 seconds to prevent UI stutter from sysfs spam.
+        local time_since_enforce=$((current_time - LAST_ENFORCE_TIME))
+        if [ "$time_since_enforce" -ge 30 ]; then
+            if [ -w "$BATT_CURRENT_MAX" ]; then
+                sysfs_write "$max_current_ua" "$BATT_CURRENT_MAX"
+            fi
+            apply_universal_charging_control "$max_current_ua"
+            LAST_ENFORCE_TIME="$current_time"
         fi
-        apply_universal_charging_control "$max_current_ua"
     fi
 }
 

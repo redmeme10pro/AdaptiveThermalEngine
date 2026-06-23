@@ -566,6 +566,9 @@ main_loop() {
             CURRENT_POLICY="balanced"
             LAST_POLICY_CHANGE="$NOW_TIME"
 
+            # Reset adaptive charging evaluation timer to trigger immediate recovery
+            export ADAPTIVE_LAST_EVAL_TIME=0
+
             # Start tracking thermal recovery speed
             export RECOVERY_START_TIME="$NOW_TIME"
             export RECOVERY_START_TEMP="$temp"
@@ -657,6 +660,10 @@ main_loop() {
             CURRENT_POLICY="$new_policy"
             LAST_POLICY_CHANGE="$NOW_TIME"
         fi
+
+        # Write live status for WebUI
+        echo "temp=${temp} gpu=${gpu} policy=${CURRENT_POLICY} gaming=${gaming} pred=${pred}" > /data/local/tmp/thermalai.status
+        chmod 644 /data/local/tmp/thermalai.status 2>/dev/null || true
 
         if [ "$screen_state" = "off" ]; then
             sleep "$((POLL_INTERVAL * 2))" # Poll slower when screen is off
