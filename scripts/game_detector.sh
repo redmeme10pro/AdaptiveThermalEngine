@@ -319,50 +319,30 @@ _dumpsys_fallback() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# REALTIME UNLATCHED CHECK (FOR CHARGING & TRANSITIONS)
-# Returns true if a game is actively running right now, ignoring debounces
-# ══════════════════════════════════════════════════════════════════════════════
-detect_realtime_gaming_status() {
-    _scan_oom_for_game
-    if [ "$_LAST_DETECTION_RESULT" = "true" ]; then
-        echo "true"
-        return
-    fi
-
-    _scan_renderthreads_for_game
-    if [ "$_LAST_DETECTION_RESULT" = "true" ]; then
-        echo "true"
-        return
-    fi
-
-    echo "false"
-}
-
-# ══════════════════════════════════════════════════════════════════════════════
 # MAIN ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
+# Note: Relies on $NOW_TIME global variable from the main loop to avoid forks.
 detect_gaming_context() {
-    local now
-    now=$(date +%s)
+    # ── Realtime Check Rate-Limiting (CPU-intensive) ───────────────────────
+    # If the latch is active, only verify the game is still running every 5 seconds.
+    # If the latch is inactive, check normally based on PROC_SCAN_INTERVAL.
+    local scan_interval="$PROC_SCAN_INTERVAL"
 
-    # ── Latch check (Layer 3) ──────────────────────────────────────────────
-    if [ "$now" -lt "$_GAME_LATCH_UNTIL" ]; then
-        local remaining=$((_GAME_LATCH_UNTIL - now))
-        log_debug "Latch active: ${remaining}s remaining (${_CONFIRMED_GAME_PKG})"
-        _LAST_DETECTION_RESULT="true"
-        return
+    if [ "$NOW_TIME" -lt "$_GAME_LATCH_UNTIL" ]; then
+        # Latch is active. Only do real-time verification every 5s.
+        scan_interval=5
     fi
 
-    # ── Rate-limit the /proc scan (CPU-intensive) ──────────────────────────
-    local since_scan=$((now - _LAST_PROC_SCAN))
+    local since_scan=$((NOW_TIME - _LAST_PROC_SCAN))
 
-    if [ "$since_scan" -ge "$PROC_SCAN_INTERVAL" ]; then
-        _LAST_PROC_SCAN="$now"
+    if [ "$since_scan" -ge "$scan_interval" ]; then
+        _LAST_PROC_SCAN="$NOW_TIME"
 
         # Layer 1: oom_score_adj (foreground pkg detection)
         _scan_oom_for_game
         if [ "$_LAST_DETECTION_RESULT" = "true" ]; then
-            _GAME_LATCH_UNTIL=$((now + GAME_LATCH_SEC))
+            _GAME_LATCH_UNTIL=$((NOW_TIME + GAME_LATCH_SEC))
+            _REALTIME_GAMING="true"
             log_info "Gaming confirmed (L1/oom): ${_CONFIRMED_GAME_PKG} latch=${GAME_LATCH_SEC}s"
             return
         fi
@@ -370,23 +350,35 @@ detect_gaming_context() {
         # Layer 2: RenderThread + GPU scan
         _scan_renderthreads_for_game
         if [ "$_LAST_DETECTION_RESULT" = "true" ]; then
-            _GAME_LATCH_UNTIL=$((now + GAME_LATCH_SEC))
+            _GAME_LATCH_UNTIL=$((NOW_TIME + GAME_LATCH_SEC))
+            _REALTIME_GAMING="true"
             log_info "Gaming confirmed (L2/render+gpu): ${_CONFIRMED_GAME_PKG} latch=${GAME_LATCH_SEC}s"
             return
         fi
+
+        # If we got here during a scan, real-time gaming is definitely false.
+        _REALTIME_GAMING="false"
     fi
 
-    # Layer 4: dumpsys fallback (infrequent)
+    # ── Latch check (Layer 3) ──────────────────────────────────────────────
+    # If we didn't scan this tick, or if the scan failed but the latch is still alive:
+    if [ "$NOW_TIME" -lt "$_GAME_LATCH_UNTIL" ]; then
+        local remaining=$((_GAME_LATCH_UNTIL - NOW_TIME))
+        log_debug "Latch active: ${remaining}s remaining (${_CONFIRMED_GAME_PKG})"
+        _LAST_DETECTION_RESULT="true"
+        return
+    fi
+
+    # Layer 4: dumpsys fallback (infrequent, only when latch expired)
     _dumpsys_fallback
     if [ "$_LAST_DETECTION_RESULT" = "true" ]; then
-        _GAME_LATCH_UNTIL=$((now + GAME_LATCH_SEC))
+        _GAME_LATCH_UNTIL=$((NOW_TIME + GAME_LATCH_SEC))
+        _REALTIME_GAMING="true"
         log_info "Gaming confirmed (L4/dumpsys): ${_CACHED_PKG} latch=${GAME_LATCH_SEC}s"
         return
     fi
 
     log_debug "No game detected"
     _LAST_DETECTION_RESULT="false"
+    _REALTIME_GAMING="false"
 }
-
-# Export for CLI use
-get_current_game() { echo "$_CONFIRMED_GAME_PKG"; }

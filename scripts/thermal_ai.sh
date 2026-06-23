@@ -437,6 +437,8 @@ main_loop() {
     apply_thermal_policy "balanced" "false" "40" "transition"
 
     while true; do
+        export NOW_TIME=$(date +%s)
+
         # Property-based override (Tasker / ADB / automation)
         local forced_policy
         forced_policy=$(getprop thermalai.force_policy 2>/dev/null)
@@ -446,7 +448,7 @@ main_loop() {
                     log_info "Property override: thermalai.force_policy=$forced_policy"
                     apply_thermal_policy "$forced_policy" "$gaming" "$temp"
                     CURRENT_POLICY="$forced_policy"
-                    LAST_POLICY_CHANGE=$(date +%s)
+                    LAST_POLICY_CHANGE="$NOW_TIME"
                     setprop thermalai.force_policy "none" 2>/dev/null
                     ;;
                 *)
@@ -472,7 +474,7 @@ main_loop() {
         detect_gaming_context
         local gaming="$_LAST_DETECTION_RESULT"
 
-        local realtime_gaming; realtime_gaming=$(detect_realtime_gaming_status)
+        local realtime_gaming="$_REALTIME_GAMING"
 
         update_history "$temp"
         local trend; trend=$(calculate_trend "$TEMP_HISTORY")
@@ -502,27 +504,25 @@ main_loop() {
             exit 1
         fi
 
-        local now_time=$(date +%s)
-
         # Self-healing stuck state watchdog
-        if [ $((now_time % 30)) -eq 0 ]; then
+        if [ $((NOW_TIME % 30)) -eq 0 ]; then
             apply_thermal_policy "$CURRENT_POLICY" "$gaming" "$temp" "watchdog"
         fi
 
         if [ "$LAST_GAMING_STATE" = "true" ] && [ "$gaming" = "false" ]; then
-            GAME_EXIT_COOLDOWN_UNTIL=$((now_time + 90))
-            COOLDOWN_SOURCE_PKG=$(get_current_game)
+            GAME_EXIT_COOLDOWN_UNTIL=$((NOW_TIME + 90))
+            COOLDOWN_SOURCE_PKG="$_CONFIRMED_GAME_PKG"
             log_info "Game exit detected. Post-game cooldown started for 90 seconds. Source: $COOLDOWN_SOURCE_PKG"
             # Apply transition immediately to flush any stuck network/touch properties from previous game
             apply_thermal_policy "balanced" "$gaming" "$temp" "transition"
             CURRENT_POLICY="balanced"
-            LAST_POLICY_CHANGE="$now_time"
+            LAST_POLICY_CHANGE="$NOW_TIME"
         fi
         LAST_GAMING_STATE="$gaming"
 
         local current_game_pkg=""
         if [ "$gaming" = "true" ]; then
-            current_game_pkg=$(get_current_game)
+            current_game_pkg="$_CONFIRMED_GAME_PKG"
             if [ -n "$current_game_pkg" ]; then
                 if [ "$current_game_pkg" != "$LAST_GAME_PKG" ]; then
                     load_game_profile "$current_game_pkg"
@@ -544,19 +544,19 @@ main_loop() {
         else
             new_policy=$(ai_decide_policy "$temp" "$gpu" "$gaming" "$pred" "$conf" "$current_game_pkg")
 
-            if [ "$now_time" -lt "$GAME_EXIT_COOLDOWN_UNTIL" ]; then
+            if [ "$NOW_TIME" -lt "$GAME_EXIT_COOLDOWN_UNTIL" ]; then
                 if [ "$gaming" = "true" ]; then
                     local cur_pkg="$current_game_pkg"
                     if [ "$cur_pkg" != "$COOLDOWN_SOURCE_PKG" ]; then
                         GAME_EXIT_COOLDOWN_UNTIL=0
                         log_info "Game switch detected ($COOLDOWN_SOURCE_PKG -> $cur_pkg). Cancelling cooldown."
                     else
-                        local remaining=$((GAME_EXIT_COOLDOWN_UNTIL - now_time))
+                        local remaining=$((GAME_EXIT_COOLDOWN_UNTIL - NOW_TIME))
                         new_policy="balanced"
                         log_debug "Cooling down: forcing balanced (${remaining}s remaining)"
                     fi
                 else
-                    local remaining=$((GAME_EXIT_COOLDOWN_UNTIL - now_time))
+                    local remaining=$((GAME_EXIT_COOLDOWN_UNTIL - NOW_TIME))
                     new_policy="balanced"
                     log_debug "Cooling down: forcing balanced (${remaining}s remaining)"
                 fi
@@ -565,8 +565,7 @@ main_loop() {
 
         # Stutter override: jank during balanced -> force conservative gaming
         if [ "$gaming" = "true" ] && [ "$new_policy" = "balanced" ]; then
-            local game_pkg
-            game_pkg=$(get_current_game)
+            local game_pkg="$_CONFIRMED_GAME_PKG"
             local stutter
             stutter=$(detect_frame_stutter "$game_pkg")
             if [ "$stutter" = "true" ]; then
@@ -580,7 +579,7 @@ main_loop() {
             log_info "Policy change: temp=${temp} gpu=${gpu} gaming=${gaming} -> ${new_policy}"
 
             CURRENT_POLICY="$new_policy"
-            LAST_POLICY_CHANGE=$(date +%s)
+            LAST_POLICY_CHANGE="$NOW_TIME"
         fi
 
         if [ "$screen_state" = "off" ]; then
@@ -595,7 +594,7 @@ main_loop() {
             fi
         else
             if [ "$TREND_SCORE" -ge -2 ] && [ "$TREND_SCORE" -le 2 ]; then
-                sleep 4
+                sleep 8 # Sleep even longer when stable and not gaming to reduce CPU load
             else
                 sleep "$POLL_INTERVAL"
             fi

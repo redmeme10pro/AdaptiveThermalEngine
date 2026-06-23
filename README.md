@@ -43,6 +43,11 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.3.11
+- **CPU Overhead Optimization**: Slashed the daemon's background CPU consumption by eliminating redundant subshell forks (e.g., `date +%s`, `get_current_game`, and `detect_realtime_gaming_status`) and replacing them with optimized global variables.
+- **Intelligent Scanning**: The PID process scanner now strictly limits full device process iteration to once every 5 seconds while a game is already confirmed running, drastically reducing idle system load.
+- **Adaptive Deep Sleep**: Idle, non-gaming stable polls now deep-sleep for 8 seconds instead of 4 seconds to further reduce background drain.
+
 ### Changelog v2.3.10
 - Fixed an operator precedence bug that caused the charging state machine to exit emergency protection too early.
 - Fixed a bash execution bug in `_apply_cpuset` where core isolation constraints would be automatically rolled back if sysfs writes failed.

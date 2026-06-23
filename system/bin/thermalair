@@ -188,11 +188,14 @@ cmd_gaming() {
     discover_cpu_topology 2>/dev/null
     . "$MODDIR/scripts/game_detector.sh"
 
+    # Export NOW_TIME since the detector relies on it from the main loop
+    export NOW_TIME=$(date +%s)
+
     local gpu game pkg
     gpu=$(get_gpu_load)
     detect_gaming_context
     game="$_LAST_DETECTION_RESULT"
-    pkg=$(get_current_game)
+    pkg="$_CONFIRMED_GAME_PKG"
 
     echo "Detected Game Pkg  : ${pkg:-<not detected>}"
     echo "Known Game Pkg?    : $(is_known_game_package "$pkg")"
