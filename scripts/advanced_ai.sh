@@ -87,6 +87,22 @@ get_context_score() {
         fi
     fi
 
+    # Battery Level Awareness
+    local current_plugged=$(cat /sys/class/power_supply/battery/status 2>/dev/null || echo "Unknown")
+    if [ "$current_plugged" = "Charging" ]; then
+        local batt_level=50
+        if [ -f "/sys/class/power_supply/battery/capacity" ]; then
+            batt_level=$(cat "/sys/class/power_supply/battery/capacity" 2>/dev/null || echo 50)
+        fi
+        if [ "$batt_level" -lt 20 ]; then
+            # Internal resistance is high
+            context_score=$((context_score - 10))
+        elif [ "$batt_level" -gt 90 ]; then
+            # Trickle charging causes heat
+            context_score=$((context_score - 10))
+        fi
+    fi
+
     echo "$context_score"
 }
 
@@ -192,6 +208,20 @@ get_game_profile_modifier() {
              fi
         fi
     fi
+
+    # Post-game Thermal Accounting for Next Session (Residual Heat Penalty)
+    if [ -n "$LAST_SESSION_END_TIME" ] && [ "$LAST_SESSION_END_TIME" -gt 0 ]; then
+        local current_time=$(date +%s)
+        local time_since_last_session=$((current_time - LAST_SESSION_END_TIME))
+        if [ "$time_since_last_session" -lt 300 ]; then
+            # Linear decay from -8 down to 0 over 300 seconds (5 mins)
+            local penalty=$((8 - (time_since_last_session * 8 / 300)))
+            if [ "$penalty" -gt 0 ]; then
+                modifier=$((modifier - penalty))
+            fi
+        fi
+    fi
+
     echo "$modifier"
 }
 
@@ -228,6 +258,21 @@ get_foreground_priority() {
     esac
 
     echo "$priority_boost"
+}
+
+get_memory_pressure() {
+    local mem_total
+    mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    local mem_avail
+    mem_avail=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+
+    if [ -n "$mem_total" ] && [ -n "$mem_avail" ] && [ "$mem_total" -gt 0 ]; then
+        local mem_used=$((mem_total - mem_avail))
+        local pressure=$((mem_used * 100 / mem_total))
+        echo "$pressure"
+    else
+        echo 0
+    fi
 }
 
 detect_frame_stutter() {
