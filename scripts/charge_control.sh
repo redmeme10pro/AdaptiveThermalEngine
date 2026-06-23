@@ -128,10 +128,35 @@ apply_charging_control() {
         local level_gained=$((batt_level - ADAPTIVE_LAST_BATT_LEVEL))
         local temp_diff=$((batt_temp - ADAPTIVE_LAST_BATT_TEMP))
 
+        # Determine charger type by calculating wattage
+        local usb_current_now
+        usb_current_now=$(cat /sys/class/power_supply/usb/current_now 2>/dev/null || echo 0)
+        # Convert negative to positive
+        [ "$usb_current_now" -lt 0 ] && usb_current_now=$((usb_current_now * -1))
+
+        local usb_voltage_now
+        usb_voltage_now=$(cat /sys/class/power_supply/usb/voltage_now 2>/dev/null || echo 0)
+
+        # Calculate input watts. (current_now * voltage_now) / 1000000 = micro * micro / 1000000 -> scale to Watt.
+        # But wait, usually current_now is uA and voltage_now is uV.
+        # W = (uA * uV) / 10^12. In shell, do (uA / 1000) * (uV / 1000) / 1000000 = W.
+        local input_watts=0
+        if [ "$usb_current_now" -gt 0 ] && [ "$usb_voltage_now" -gt 0 ]; then
+            local ma=$((usb_current_now / 1000))
+            local mv=$((usb_voltage_now / 1000))
+            input_watts=$(( (ma * mv) / 1000000 ))
+        fi
+
         # Determine the target temperature based on context
         local target_temp=38
         if [ "$realtime_gaming" = "true" ]; then
             target_temp=36
+        fi
+
+        # If fast charger connected, throttle sooner to prevent sudden thermal runaway
+        if [ "$input_watts" -gt 15 ]; then
+            target_temp=$((target_temp - 1))
+            log_debug "Fast charger detected (${input_watts}W). Lowering target temp to ${target_temp}°C."
         fi
 
         # Adaptive adjustments based on learning (temp_diff)
