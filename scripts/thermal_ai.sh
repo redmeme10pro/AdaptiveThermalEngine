@@ -255,6 +255,40 @@ ai_decide_policy() {
             local fg_boost=$(get_foreground_priority "$game_pkg")
             s=$((s + fg_boost))
         fi
+
+        # Session-length thermal fatigue
+        if [ "$SESSION_COUNT" -ge 3 ]; then
+            s=$((s - 5))
+            log_debug "Thermal fatigue applied (-5) due to high session count ($SESSION_COUNT)."
+        fi
+
+        # Poor cooling environment penalty
+        if [ -n "$POOR_COOLING_MODIFIER" ] && [ "$POOR_COOLING_MODIFIER" -lt 0 ]; then
+            s=$((s + POOR_COOLING_MODIFIER))
+            log_debug "Poor cooling modifier applied ($POOR_COOLING_MODIFIER)."
+        fi
+
+        # Pre-emptive boost if memory pressure is high
+        if command -v get_memory_pressure >/dev/null 2>&1; then
+            local mem_pressure=$(get_memory_pressure)
+            if [ "$mem_pressure" -gt 85 ]; then
+                s=$((s + 15))
+                log_debug "High memory pressure ($mem_pressure%), applying +15 stutter prevention boost."
+                # We can also flag a global so that the policy enforcer knows to raise swappiness earlier.
+                export HIGH_MEM_PRESSURE="true"
+            else
+                export HIGH_MEM_PRESSURE="false"
+            fi
+        fi
+
+        # GPU Ramp Pre-load Boost
+        if [ "$GPU_RAMP_BOOST" = "true" ]; then
+            s=$((s + 20))
+            log_debug "GPU Ramp Pre-load boost (+20) applied to score."
+        fi
+    else
+        export HIGH_MEM_PRESSURE="false"
+        export GPU_RAMP_BOOST="false"
     fi
 
     local cooling_boost=$(get_cooling_efficiency "$cur" "$gpu")
@@ -418,6 +452,8 @@ get_screen_state() {
 }
 
 # ─── Main Loop ────────────────────────────────────────────────────────────────
+SESSION_COUNT=0
+
 main_loop() {
     log_info "════════════════════════════════════════"
     log_info " ThermalAI v3.0 daemon starting"
@@ -476,6 +512,18 @@ main_loop() {
 
         local realtime_gaming="$_REALTIME_GAMING"
 
+        # Predictive Pre-load Detection using GPU Ramp Rate
+        if [ -n "$LAST_GPU_LOAD" ] && [ "$gaming" = "true" ]; then
+            local gpu_delta=$((gpu - LAST_GPU_LOAD))
+            if [ "$gpu_delta" -gt 20 ]; then
+                export GPU_RAMP_BOOST="true"
+                log_debug "Predictive Pre-load: GPU load spiked by ${gpu_delta}% in one tick. Applying proactive boost."
+            else
+                export GPU_RAMP_BOOST="false"
+            fi
+        fi
+        LAST_GPU_LOAD="$gpu"
+
         update_history "$temp"
         local trend; trend=$(calculate_trend "$TEMP_HISTORY")
         update_trend_ema "$trend"
@@ -517,6 +565,37 @@ main_loop() {
             apply_thermal_policy "balanced" "$gaming" "$temp" "transition"
             CURRENT_POLICY="balanced"
             LAST_POLICY_CHANGE="$NOW_TIME"
+
+            # Reset adaptive charging evaluation timer to trigger immediate recovery
+            export ADAPTIVE_LAST_EVAL_TIME=0
+
+            # Start tracking thermal recovery speed
+            export RECOVERY_START_TIME="$NOW_TIME"
+            export RECOVERY_START_TEMP="$temp"
+            export RECOVERY_TRACKING="true"
+            export LAST_SESSION_END_TIME="$NOW_TIME"
+        fi
+
+        # Track recovery speed over the 90-second cooldown
+        if [ "$RECOVERY_TRACKING" = "true" ]; then
+            local elapsed=$((NOW_TIME - RECOVERY_START_TIME))
+            if [ "$elapsed" -ge 90 ] || [ "$gaming" = "true" ]; then
+                local temp_drop=$((RECOVERY_START_TEMP - temp))
+                # Phone should drop at least 3 degrees in 90s if cooling is good.
+                if [ "$temp_drop" -lt 3 ]; then
+                    export POOR_COOLING_MODIFIER="-10"
+                    log_warn "Poor thermal recovery detected (dropped only ${temp_drop}°C in ${elapsed}s). Applying -10 penalty for future sessions."
+                else
+                    export POOR_COOLING_MODIFIER="0"
+                    log_debug "Good thermal recovery detected (dropped ${temp_drop}°C in ${elapsed}s)."
+                fi
+                export RECOVERY_TRACKING="false"
+            fi
+        fi
+
+        if [ "$LAST_GAMING_STATE" = "false" ] && [ "$gaming" = "true" ]; then
+            SESSION_COUNT=$((SESSION_COUNT + 1))
+            log_info "Game start detected. Session count incremented to $SESSION_COUNT"
         fi
         LAST_GAMING_STATE="$gaming"
 
@@ -581,6 +660,10 @@ main_loop() {
             CURRENT_POLICY="$new_policy"
             LAST_POLICY_CHANGE="$NOW_TIME"
         fi
+
+        # Write live status for WebUI
+        echo "temp=${temp} gpu=${gpu} policy=${CURRENT_POLICY} gaming=${gaming} pred=${pred}" > /data/local/tmp/thermalai.status
+        chmod 644 /data/local/tmp/thermalai.status 2>/dev/null || true
 
         if [ "$screen_state" = "off" ]; then
             sleep "$((POLL_INTERVAL * 2))" # Poll slower when screen is off

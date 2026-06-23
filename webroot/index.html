@@ -445,13 +445,13 @@
                     document.getElementById('daemon-status').style.color = 'var(--danger-color)';
                 }
 
-                // Extract latest AI line from log
-                const { stdout: aiLog } = await exec('grep "Policy change:\\|AI:" /data/local/tmp/thermalai.log | tail -1');
-                if(aiLog) {
-                    const tempMatch = aiLog.match(/cur=(\d+)/) || aiLog.match(/temp=(\d+)/);
-                    const policyMatch = aiLog.match(/-> (\w+)/);
-                    const gpuMatch = aiLog.match(/gpu=(\d+)/);
-                    const gamingMatch = aiLog.match(/gaming=(\w+)/);
+                // Extract latest stats from status file
+                const { stdout: statusLog } = await exec('cat /data/local/tmp/thermalai.status 2>/dev/null || echo ""');
+                if(statusLog && statusLog.trim().length > 0) {
+                    const tempMatch = statusLog.match(/temp=(\d+)/);
+                    const policyMatch = statusLog.match(/policy=(\w+)/);
+                    const gpuMatch = statusLog.match(/gpu=(\d+)/);
+                    const gamingMatch = statusLog.match(/gaming=(\w+)/);
 
                     if(tempMatch) {
                         const tempVal = parseInt(tempMatch[1]);
@@ -466,11 +466,11 @@
                     if(gpuMatch) document.getElementById('dash-gpu').innerText = gpuMatch[1] + "%";
                     if(gamingMatch) document.getElementById('dash-gaming').innerText = gamingMatch[1].toUpperCase();
 
-                    document.getElementById('dash-ai-raw').innerText = aiLog.trim();
+                    document.getElementById('dash-ai-raw').innerText = statusLog.trim();
                 }
 
                 // Extract latest charge state from verbose log
-                const { stdout: chargeLog } = await exec('grep "Charging current limit" /data/local/tmp/thermalai_verbose.log | tail -1');
+                const { stdout: chargeLog } = await exec('grep "Adaptive charge limit" /data/local/tmp/thermalai_verbose.log | tail -1');
                 if(chargeLog) {
                     const battMatch = chargeLog.match(/batt_temp=(\d+)/);
                     const stateMatch = chargeLog.match(/state=(\w+)/);
