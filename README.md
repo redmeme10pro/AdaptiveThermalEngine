@@ -43,6 +43,11 @@ keeping your device safe.
 - **Suspend Cooling**: Drops CPU and GPU to absolute minimal power states instantly when the screen is turned off.
 - **Background isolation**: Pushes non-game processes to little cores via cpuset during gaming conserve/powersave modes.
 
+### Changelog v2.4.0
+- **UI Lag / Screen-Wake Fix**: Resolved an issue where frequency scaling limits were written out-of-order, causing the Android kernel to reject bounds and lock the CPU/GPU at minimal frequencies upon waking the device.
+- **Adaptive Smart Charging**: Replaced hardcoded thermal charging limits with a dynamically adjusting AI that monitors temperature differentials and battery level gains over 60-second windows to continually hone in on the ideal "sweet spot" charging current.
+- **PMIC Starvation Protection**: Charging current will no longer forcefully drop below 1500mA (1.5A) while the screen is on (unless above 40°C critical temps). This prevents PMIC starvation which previously hardware-throttled the SoC and caused UI stutter while plugged in.
+
 ### Changelog v2.3.12
 - **KernelSU WebUI**: Added a fully functional WebUI dashboard accessible directly inside the KernelSU Manager app. It features a real-time stat dashboard, live scrolling log viewer, visual temperature graph, and a direct config editor that restarts the daemon automatically upon saving.
 

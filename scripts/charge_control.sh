@@ -78,12 +78,20 @@ get_robust_battery_temp() {
 }
 
 # ─── Adjust Charging Current ──────────────────────────────────────────────────
-# Global Charging State Machine variables
-CHARGE_STATE="NORMAL" # States: NORMAL, GAMING, THERMAL_THROTTLE, EMERGENCY
+# Global Adaptive Charging Variables
+ADAPTIVE_CHARGE_CURRENT_UA=5000000
+ADAPTIVE_LAST_EVAL_TIME=0
+ADAPTIVE_LAST_BATT_LEVEL=0
+ADAPTIVE_LAST_BATT_TEMP=0
 
 apply_charging_control() {
     local realtime_gaming="$1"  # Unlatched true/false indicating instant game status
-    local max_current_ua="5000000"
+    local screen_state
+    screen_state=$(cat /sys/class/backlight/panel0-backlight/brightness 2>/dev/null || echo "100")
+    local is_screen_on="true"
+    if [ "$screen_state" = "0" ]; then
+        is_screen_on="false"
+    fi
 
     # Read actual battery temperature safely
     local batt_temp_raw
@@ -98,89 +106,105 @@ apply_charging_control() {
         batt_level=$(cat "$BATT_CAPACITY" 2>/dev/null || echo 0)
     fi
 
-    # 1. State Machine Transitions
-    local next_state="$CHARGE_STATE"
-
-    if [ "$batt_temp" -ge 40 ]; then
-        next_state="EMERGENCY"
-    elif [ "$batt_temp" -ge 37 ]; then
-        next_state="THERMAL_THROTTLE"
-    elif [ "$batt_temp" -le 35 ] && { [ "$CHARGE_STATE" = "THERMAL_THROTTLE" ] || [ "$CHARGE_STATE" = "EMERGENCY" ]; }; then
-        # Hysteresis: Only exit thermal throttling/emergency when temp drops to 35C
-        if [ "$realtime_gaming" = "true" ]; then
-            next_state="GAMING"
-        else
-            next_state="NORMAL"
-        fi
-    elif [ "$CHARGE_STATE" != "THERMAL_THROTTLE" ] && [ "$CHARGE_STATE" != "EMERGENCY" ]; then
-        # We are not throttling. Choose base state based on gaming.
-        if [ "$realtime_gaming" = "true" ]; then
-            next_state="GAMING"
-        else
-            next_state="NORMAL"
-        fi
-    fi
-
     # Only enforce limits if the device is actually charging
     if [ "$current_plugged" != "Charging" ]; then
-        CHARGE_STATE="$next_state"
         LAST_APPLIED_CHARGE_LIMIT=""
         return 0
     fi
 
-    # Force a state transition logging flush if state changed
-    if [ "$CHARGE_STATE" != "$next_state" ]; then
-        log_info "Charging State Transition: $CHARGE_STATE -> $next_state (batt_temp=${batt_temp}°C)"
-        CHARGE_STATE="$next_state"
-        LAST_APPLIED_CHARGE_LIMIT="" # invalidate cache to force immediate application
+    # Initialize adaptive tracking if needed
+    local current_time
+    current_time=$(date +%s)
+    if [ "$ADAPTIVE_LAST_EVAL_TIME" -eq 0 ]; then
+        ADAPTIVE_LAST_EVAL_TIME="$current_time"
+        ADAPTIVE_LAST_BATT_LEVEL="$batt_level"
+        ADAPTIVE_LAST_BATT_TEMP="$batt_temp"
+        ADAPTIVE_CHARGE_CURRENT_UA=5000000
     fi
 
-    # 2. Apply Limits Based on Current State
-    if [ "$CHARGE_STATE" = "EMERGENCY" ]; then
-        max_current_ua="500000"
-    elif [ "$CHARGE_STATE" = "THERMAL_THROTTLE" ]; then
-        if [ "$batt_temp" -ge 39 ]; then
-            max_current_ua="500000"
-        elif [ "$batt_temp" -ge 38 ]; then
-            max_current_ua="1000000"
-        else
-            max_current_ua="1500000"
+    # 1. Adaptive AI Charging Logic (runs every 60 seconds)
+    local elapsed=$((current_time - ADAPTIVE_LAST_EVAL_TIME))
+    if [ "$elapsed" -ge 60 ]; then
+        local level_gained=$((batt_level - ADAPTIVE_LAST_BATT_LEVEL))
+        local temp_diff=$((batt_temp - ADAPTIVE_LAST_BATT_TEMP))
+
+        # Determine the target temperature based on context
+        local target_temp=38
+        if [ "$realtime_gaming" = "true" ]; then
+            target_temp=36
         fi
-    elif [ "$CHARGE_STATE" = "GAMING" ]; then
-        if [ "$batt_temp" -ge 36 ]; then
-            max_current_ua="1000000"
-        else
-            max_current_ua="2000000"
+
+        # Adaptive adjustments based on learning (temp_diff)
+        if [ "$batt_temp" -gt "$target_temp" ]; then
+            if [ "$temp_diff" -gt 0 ]; then
+                # Rising temp: reduce aggressively
+                ADAPTIVE_CHARGE_CURRENT_UA=$((ADAPTIVE_CHARGE_CURRENT_UA - 500000))
+            else
+                # Temp is high but stable/dropping: reduce slightly
+                ADAPTIVE_CHARGE_CURRENT_UA=$((ADAPTIVE_CHARGE_CURRENT_UA - 250000))
+            fi
+        elif [ "$batt_temp" -lt "$((target_temp - 2))" ]; then
+            # We are cool, can increase current
+            if [ "$temp_diff" -lt 0 ]; then
+               # Temp dropping, safe to increase more
+               ADAPTIVE_CHARGE_CURRENT_UA=$((ADAPTIVE_CHARGE_CURRENT_UA + 500000))
+            else
+               # Stable temp, increase slowly
+               ADAPTIVE_CHARGE_CURRENT_UA=$((ADAPTIVE_CHARGE_CURRENT_UA + 250000))
+            fi
         fi
-    else
-        # NORMAL state
-        if [ "$batt_temp" -ge 36 ]; then
-            max_current_ua="3000000"
-        else
-            max_current_ua="5000000"
+
+        # Update tracking variables
+        ADAPTIVE_LAST_EVAL_TIME="$current_time"
+        ADAPTIVE_LAST_BATT_LEVEL="$batt_level"
+        ADAPTIVE_LAST_BATT_TEMP="$batt_temp"
+    fi
+
+    # 2. Hard Limits & Boundaries
+    # Absolute maximum is 5A
+    if [ "$ADAPTIVE_CHARGE_CURRENT_UA" -gt 5000000 ]; then
+        ADAPTIVE_CHARGE_CURRENT_UA=5000000
+    fi
+
+    # Absolute minimum is 500mA to prevent battery drain while plugged in
+    if [ "$ADAPTIVE_CHARGE_CURRENT_UA" -lt 500000 ]; then
+        ADAPTIVE_CHARGE_CURRENT_UA=500000
+    fi
+
+    # Emergency thermal override
+    if [ "$batt_temp" -ge 40 ]; then
+        ADAPTIVE_CHARGE_CURRENT_UA=500000
+    fi
+
+    local max_current_ua="$ADAPTIVE_CHARGE_CURRENT_UA"
+
+    # 3. PMIC Starvation Protection (Screen On)
+    # If the screen is on and we are not in emergency thermal state (>40C),
+    # never drop below 1.5A to ensure the UI stays smooth and PMIC doesn't throttle CPU/GPU.
+    if [ "$is_screen_on" = "true" ] && [ "$batt_temp" -lt 40 ]; then
+        if [ "$max_current_ua" -lt 1500000 ]; then
+            max_current_ua=1500000
         fi
     fi
 
-    # 3. Apply SOC-based graceful degradation overriding everything except emergency limits
+    # 4. Apply SOC-based graceful degradation overriding everything except emergency limits
     if [ "$batt_level" -ge 90 ] && [ "$max_current_ua" -gt 1000000 ]; then
         max_current_ua="1000000"
     fi
 
-    # 4. Hardware Enforcement
+    # 5. Hardware Enforcement
     if [ "$LAST_APPLIED_CHARGE_LIMIT" != "$max_current_ua" ]; then
         if [ -w "$BATT_CURRENT_MAX" ]; then
             sysfs_write "$max_current_ua" "$BATT_CURRENT_MAX"
         fi
         apply_universal_charging_control "$max_current_ua"
 
-        echo "[$(date "+%Y-%m-%d %H:%M:%S")] [DEBUG] Charging current limit set to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C, state=$CHARGE_STATE)" >> /data/local/tmp/thermalai_verbose.log 2>/dev/null
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] [DEBUG] Adaptive charge limit set to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C)" >> /data/local/tmp/thermalai_verbose.log 2>/dev/null
 
-        if [ "$CHARGE_STATE" = "EMERGENCY" ]; then
-            log_warn "Battery Temp Critical (${batt_temp}°C) - Throttling to $((max_current_ua / 1000))mA"
-        elif [ "$CHARGE_STATE" = "NORMAL" ] && [ "$max_current_ua" = "5000000" ]; then
-            log_info "Charging limit released to 5A (batt_temp=${batt_temp}°C)"
+        if [ "$max_current_ua" = "5000000" ]; then
+            log_info "Adaptive charging limit released to 5A (batt_temp=${batt_temp}°C)"
         else
-            log_info "Charging limit adjusted to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C, state=$CHARGE_STATE)"
+            log_info "Adaptive charging limit adjusted to $((max_current_ua / 1000))mA (batt_temp=${batt_temp}°C)"
         fi
 
         LAST_APPLIED_CHARGE_LIMIT="$max_current_ua"
