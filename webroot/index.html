@@ -226,11 +226,11 @@
     </header>
 
     <nav>
-        <button class="active" onclick="switchTab('dashboard')">Dashboard</button>
-        <button onclick="switchTab('logs')">Logs</button>
-        <button onclick="switchTab('games')">Games</button>
-        <button onclick="switchTab('settings')">Settings</button>
-        <button onclick="switchTab('controls')">Controls</button>
+        <button class="active" onclick="switchTab('dashboard', this)">Dashboard</button>
+        <button onclick="switchTab('logs', this)">Logs</button>
+        <button onclick="switchTab('games', this)">Games</button>
+        <button onclick="switchTab('settings', this)">Settings</button>
+        <button onclick="switchTab('controls', this)">Controls</button>
     </nav>
 
     <main>
@@ -398,11 +398,15 @@
         const maxHistory = 30;
 
         // Make functions globally available to onClick handlers
-        window.switchTab = (tabId) => {
+        window.switchTab = (tabId, btnElement) => {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
-            event.currentTarget.classList.add('active');
+            if (btnElement) {
+                btnElement.classList.add('active');
+            } else if (event && event.currentTarget) {
+                event.currentTarget.classList.add('active');
+            }
 
             if(tabId === 'dashboard') {
                 startAutoRefresh();
